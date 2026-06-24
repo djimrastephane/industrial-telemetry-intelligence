@@ -1,5 +1,7 @@
 # Industrial Telemetry Intelligence
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 An **Industrial Asset Monitoring and Decision Support System**, prototyped end-to-end on
 public Formula 1 telemetry data.
 
