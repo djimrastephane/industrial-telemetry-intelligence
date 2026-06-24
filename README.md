@@ -29,7 +29,7 @@ ESP/SCADA data** without exposing it:
   number, or no matching data is found, the assistant says so directly and the LLM is never
   invoked at all.
 
-See [Phase 6 in Status](#status-phases-1-6-done-plus-a-v1-operational-replay) and
+See [Phase 6 in Status](#status-phases-1-8-done) and
 [Current limitations](#current-limitations) below for the honest gaps in these guardrails.
 
 ## Screenshots
@@ -66,8 +66,9 @@ forecast, sorted by urgency, plus the full recommendations table.
 
 ![Decision Support tab](assets/screenshots/decision_support_tab.png)
 
-**Arcade Replay** - standalone "digital control room" window: a car moving around the real
-track shape with a live speed/throttle/brake/gear instrument cluster.
+**Arcade Replay (Phase 8)** - standalone "digital control room" window: multiple cars moving
+around the real track shape together, each its own colour with a legend, plus a live
+speed/throttle/brake/gear instrument cluster for the focus driver.
 
 ![Arcade replay window](assets/screenshots/arcade_replay.png)
 
@@ -150,7 +151,7 @@ industrial-telemetry-intelligence/
     visualisation.py        # shared Plotly figures
   app/
     streamlit_app.py        # dashboard: Race Detail + Season + Fleet + Predictive + Assistant + Decision tabs
-    arcade_replay.py         # standalone Arcade window: car + live HUD on the track
+    arcade_replay.py         # standalone Arcade window: multi-driver cars + live HUD on the track
   notebooks/
     01_data_exploration.ipynb
     02_baseline_analysis.ipynb
@@ -272,12 +273,15 @@ ollama pull qwen2.5:7b-instruct     # default model (src/config.py:OLLAMA_MODEL)
 9. **Run the Arcade replay** (separate native window, needs step 1's data):
 
    ```bash
-   python app/arcade_replay.py --driver VER
+   python app/arcade_replay.py --drivers VER,LEC,NOR
+   python app/arcade_replay.py --drivers VER          # single driver, as in earlier phases
    ```
 
-   Replays one driver's cached fastest lap as a car moving around the track, with an
-   instrument cluster (speed dial, throttle dial, brake lamp, gear box) above the track and
-   a checkered start/finish marker to gauge lap progress.
+   Replays each requested driver's cached fastest lap as a colour-coded car moving around the
+   track at the same time, each on its own independent lap clock (so it's a pace comparison,
+   not a recreation of where cars actually were in the race), with a legend, a checkered
+   start/finish marker, and an instrument cluster (speed dial, throttle dial, brake lamp, gear
+   box) for the first driver listed (the "focus" driver).
 
 10. **Run the notebooks** (`notebooks/01_data_exploration.ipynb`, `02_baseline_analysis.ipynb`,
     `03_anomaly_detection.ipynb`) for the same analysis in a more exploratory format.
@@ -291,7 +295,7 @@ ollama pull qwen2.5:7b-instruct     # default model (src/config.py:OLLAMA_MODEL)
    Tests use synthetic fixtures and a temp directory — they never overwrite the real
    downloaded data in `data/processed/`.
 
-## Status: Phases 1-7 done, plus a v1 operational replay
+## Status: Phases 1-8 done
 
 Dataset so far: 2024 Bahrain Grand Prix Race session (all 20 drivers' lap/weather/telemetry
 data), the full 2024 season (all 24 race rounds, ~26,600 laps), and Bahrain Grand Prix every
@@ -421,6 +425,28 @@ year from 2020-2025 (~6,500 laps).
   data happened to trigger) - it now returns a correctly-columned empty DataFrame instead.
 - 80 tests total, including a new dedicated test file for `degradation_analysis.py` (previously
   only covered indirectly through other modules) added alongside the Phase 7 work.
+- Multi-driver Arcade replay: any number of drivers' cached fastest laps play together on the
+  same track view, each a distinct colour with a legend, no new model - just generalizing the
+  Phase-prior single-driver replay to a dict of drivers (`load_multi_driver_lap_telemetry`,
+  `multi_track_bounds`, `multi_lap_duration_seconds` in `replay_data.py`). *(Phase 8)*
+- Each driver's lap plays on its own independent clock starting at t=0 of *their own* fastest
+  lap, not session wall-clock time - so the replay is an honest lap-for-lap pace comparison
+  (who's faster), not a recreation of where cars actually were on track relative to each other
+  during the race. *(Phase 8)*
+- A driver who finishes their lap before the others simply holds at their final telemetry
+  sample (reusing the existing single-driver clamping in `get_frame_at_time`) until the shared
+  clock loops at the slowest selected driver's lap duration. *(Phase 8)*
+- The gauge cluster (speed/throttle/brake/gear) stays single-driver by design - it shows the
+  "focus" driver (the first one passed to `--drivers`) while every selected driver's car and
+  label are still drawn on the track, the same instrument-panel-plus-overview split as a SCADA
+  operator screen that drills into one asset's detail while keeping the others in view.
+  *(Phase 8)*
+- `src/config.py:REPLAY_DRIVERS` sets the default driver set (`VER, LEC, NOR`); `--drivers` on
+  the command line accepts any comma-separated list of cached driver codes, and an unknown code
+  is skipped with a warning rather than aborting the whole replay. *(Phase 8)*
+- 6 new tests for the multi-driver loading, bounds-union, and longest-duration helpers in
+  `replay_data.py`, on top of the existing single-driver replay tests; 84 tests total.
+  *(Phase 8)*
 
 Fastest-lap telemetry (speed/throttle/brake/X/Y position) is cached for every driver in the
 Bahrain race session, so the Race Detail tab's driver selector, telemetry comparison, and the
@@ -499,6 +525,17 @@ Arcade replay all cover the full grid. `src/config.py:COMPARISON_DRIVERS` only s
 - Phase 7 recommends a pit *window*, not a pit *lap* tied to strategy (tyre allocation rules,
   rivals' positions, safety car probability, pit lane time loss) - it's a telemetry-only
   trigger, not a race-strategy optimizer.
+- The Phase 8 multi-driver replay shows position and a single focus driver's gauges, but no
+  per-car gap/delta readout, no tyre-degradation colour-coding of the cars, and no anomaly
+  alerts overlaid on the track - it's the simplest version that gets multiple assets on one
+  screen at once, not a full multi-asset operator view.
+- Because each driver's lap clock starts independently at t=0, the multi-driver replay cannot
+  be read as "who was ahead on track at this moment in the race" - only "who is faster, lap for
+  lap" - conflating the two would misrepresent actual race positions.
+- The reference track centerline/edges in the multi-driver replay are taken from the focus
+  driver's racing line only; other drivers' slightly different lines are not used to redraw the
+  track outline (drawing once stays simple, and FastF1 has no real track-width data to draw a
+  more authoritative outline from anyway).
 
 ## Roadmap
 
@@ -546,6 +583,13 @@ Each phase is built and verified end-to-end on real data before the next one sta
   laps preceded the model's projected threshold-crossing lap, consistent with proactive
   pitting) and an honestly-surfaced disagreement between Phase 5's relative risk category and
   Phase 7's absolute threshold, shown side by side rather than papered over.*
+- **Phase 8 — Multi-Driver Replay** ✅ done. Generalizes the single-driver Arcade replay to any
+  number of drivers' cached fastest laps moving on the same track view at once, each a distinct
+  colour with a legend, while keeping the live gauge cluster for one focus driver. Industrial
+  analogy: one control-room screen showing every asset's position at a glance, with drill-down
+  detail on the one currently selected. *Success criteria met: multiple assets visible
+  simultaneously on one replay, reusing the existing single-driver geometry/clamping logic
+  rather than rebuilding it, and unit-tested without needing a display.*
 
 ## Architecture rule
 

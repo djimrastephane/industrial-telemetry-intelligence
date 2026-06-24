@@ -142,3 +142,43 @@ def get_frame_at_time(lap_df: pd.DataFrame, elapsed_seconds: float) -> dict:
 
 def lap_duration_seconds(lap_df: pd.DataFrame) -> float:
     return float(lap_df["ElapsedSeconds"].iloc[-1] - lap_df["ElapsedSeconds"].iloc[0])
+
+
+def load_multi_driver_lap_telemetry(
+    telemetry_df: pd.DataFrame, drivers: list[str]
+) -> dict[str, pd.DataFrame]:
+    """Each driver's cached fastest lap, keyed by driver code.
+
+    Each lap keeps its own independent clock starting at ElapsedSeconds == 0
+    (set by `load_driver_lap_telemetry`), so playing them on a shared replay
+    clock compares pace lap-for-lap rather than wall-clock session time.
+    Drivers with no cached telemetry are silently skipped rather than raising,
+    so one missing driver doesn't abort a multi-driver replay.
+    """
+    laps = {}
+    for driver in drivers:
+        lap = load_driver_lap_telemetry(telemetry_df, driver)
+        if not lap.empty:
+            laps[driver] = lap
+    return laps
+
+
+def multi_track_bounds(lap_dfs: dict[str, pd.DataFrame]) -> tuple[float, float, float, float]:
+    """Union of `track_bounds` across every driver's lap, so the track outline
+    fits every car's racing line even where they diverge slightly."""
+    all_bounds = [track_bounds(lap_df) for lap_df in lap_dfs.values()]
+    min_x = min(b[0] for b in all_bounds)
+    max_x = max(b[1] for b in all_bounds)
+    min_y = min(b[2] for b in all_bounds)
+    max_y = max(b[3] for b in all_bounds)
+    return (min_x, max_x, min_y, max_y)
+
+
+def multi_lap_duration_seconds(lap_dfs: dict[str, pd.DataFrame]) -> float:
+    """Longest of the selected drivers' lap durations.
+
+    Faster drivers simply hold at their final telemetry sample (the same
+    clamping `get_frame_at_time` already does for a single driver) until the
+    shared replay clock loops, rather than the replay resetting early.
+    """
+    return max(lap_duration_seconds(lap_df) for lap_df in lap_dfs.values())

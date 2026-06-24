@@ -1,14 +1,22 @@
-"""Arcade replay v1: one driver's fastest lap, position dot + live gauges.
+"""Arcade replay: one or more drivers' fastest laps, position dot(s) + live
+gauges for a single focus driver.
 
-This is the "digital control room" view: a car moving around the track on
+This is the "digital control room" view: car(s) moving around the track on
 the bottom of the window, with a gauge cluster (speed dial, throttle dial,
-brake lamp, gear box) across the top - the same instrument-panel layout as
-a SCADA operator screen monitoring one asset. Tyre-degradation colour,
-anomaly alerts, pit-stop prompts, an asset-health score, and full multi-lap
-replay are deliberately left out of this first version - see the README
-roadmap for where those land.
+brake lamp, gear box) across the top for the focus driver - the same
+instrument-panel layout as a SCADA operator screen monitoring one asset
+while still seeing every asset's position on the shared track view.
+Tyre-degradation colour, anomaly alerts, pit-stop prompts, and an
+asset-health score are deliberately left out of this version - see the
+README roadmap for where those land.
 
-Run with: python app/arcade_replay.py --driver VER
+Each driver's lap plays on its own independent clock starting at t=0 (their
+own fastest lap), not session wall-clock time, so the replay compares pace
+lap-for-lap rather than where each car happened to be during the race.
+
+Run with:
+    python app/arcade_replay.py --drivers VER,LEC,NOR
+    python app/arcade_replay.py --drivers VER          # single driver, as before
 """
 
 import argparse
@@ -19,16 +27,17 @@ import arcade
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from src.config import REPLAY_DRIVERS
 from src.data_cleaning import load_and_clean_all
 from src.replay_data import (
     checker_line_segments,
     compute_track_edges,
     gauge_needle_point,
     get_frame_at_time,
-    lap_duration_seconds,
-    load_driver_lap_telemetry,
+    load_multi_driver_lap_telemetry,
+    multi_lap_duration_seconds,
+    multi_track_bounds,
     scale_to_screen,
-    track_bounds,
 )
 
 SCREEN_WIDTH = 1000
@@ -43,7 +52,7 @@ TRACK_HALF_WIDTH = 10  # pixels either side of the centerline (FastF1 has no rea
 SPEED_MAX_KPH = 350.0
 THROTTLE_MAX_PCT = 100.0
 
-GAUGE_CENTER_Y = TRACK_AREA_HEIGHT + GAUGE_PANEL_HEIGHT * 0.48  # vertical center within the panel
+GAUGE_CENTER_Y = TRACK_AREA_HEIGHT + GAUGE_PANEL_HEIGHT * 0.42  # vertical center within the panel
 SPEED_GAUGE_CENTER = (180, GAUGE_CENTER_Y)
 THROTTLE_GAUGE_CENTER = (420, GAUGE_CENTER_Y)
 BRAKE_LAMP_CENTER = (650, GAUGE_CENTER_Y)
@@ -52,19 +61,38 @@ GAUGE_RADIUS = 75
 BRAKE_LAMP_RADIUS = 40
 GEAR_BOX_HALF_SIZE = 40
 
+# Distinct colours cycled across drivers; the focus driver (gauge panel) is
+# always the first one passed on the command line.
+CAR_COLORS = [
+    arcade.color.RED,
+    arcade.color.YELLOW,
+    arcade.color.CYAN,
+    arcade.color.LIME_GREEN,
+    arcade.color.ORANGE,
+    arcade.color.VIOLET,
+    arcade.color.WHITE,
+]
+
+LEGEND_Y = TRACK_AREA_HEIGHT - 20  # just below the divider, inside the track view
+
 
 class ReplayWindow(arcade.Window):
-    def __init__(self, lap_df, driver: str):
-        super().__init__(SCREEN_WIDTH, SCREEN_HEIGHT, f"Industrial Telemetry Replay - {driver}")
+    def __init__(self, lap_dfs: dict, drivers: list[str]):
+        title = "Industrial Telemetry Replay - " + ", ".join(drivers)
+        super().__init__(SCREEN_WIDTH, SCREEN_HEIGHT, title)
         arcade.set_background_color(arcade.color.DARK_SLATE_GRAY)
-        self.lap_df = lap_df
-        self.driver = driver
-        self.bounds = track_bounds(lap_df)
-        self.duration = lap_duration_seconds(lap_df)
+        self.lap_dfs = lap_dfs
+        self.drivers = drivers
+        self.focus_driver = drivers[0]
+        self.colors = {driver: CAR_COLORS[i % len(CAR_COLORS)] for i, driver in enumerate(drivers)}
+        self.bounds = multi_track_bounds(lap_dfs)
+        self.duration = multi_lap_duration_seconds(lap_dfs)
         self.elapsed = 0.0
+
+        reference_lap = lap_dfs[self.focus_driver]
         centerline = [
             self._shift(scale_to_screen(x, y, self.bounds, SCREEN_WIDTH, TRACK_AREA_HEIGHT, MARGIN))
-            for x, y in zip(lap_df["X"], lap_df["Y"])
+            for x, y in zip(reference_lap["X"], reference_lap["Y"])
         ]
         self.left_edge, self.right_edge = compute_track_edges(centerline, TRACK_HALF_WIDTH)
         self.start_finish_segments = checker_line_segments(
@@ -83,11 +111,12 @@ class ReplayWindow(arcade.Window):
 
     def on_draw(self):
         self.clear()
-        frame = get_frame_at_time(self.lap_df, self.elapsed)
-        self._draw_track(frame)
-        self._draw_gauge_panel(frame)
+        frames = {driver: get_frame_at_time(lap_df, self.elapsed) for driver, lap_df in self.lap_dfs.items()}
+        self._draw_track(frames)
+        self._draw_legend()
+        self._draw_gauge_panel(frames[self.focus_driver])
 
-    def _draw_track(self, frame: dict):
+    def _draw_track(self, frames: dict):
         arcade.draw_line_strip(self.left_edge, arcade.color.LIGHT_GRAY, 3)
         arcade.draw_line_strip(self.right_edge, arcade.color.LIGHT_GRAY, 3)
 
@@ -95,10 +124,24 @@ class ReplayWindow(arcade.Window):
             color = arcade.color.BLACK if is_black else arcade.color.WHITE
             arcade.draw_line(sx, sy, ex, ey, color, line_width=6)
 
-        car_x, car_y = self._shift(
-            scale_to_screen(frame["X"], frame["Y"], self.bounds, SCREEN_WIDTH, TRACK_AREA_HEIGHT, MARGIN)
-        )
-        arcade.draw_circle_filled(car_x, car_y, 8, arcade.color.RED)
+        for driver, frame in frames.items():
+            car_x, car_y = self._shift(
+                scale_to_screen(frame["X"], frame["Y"], self.bounds, SCREEN_WIDTH, TRACK_AREA_HEIGHT, MARGIN)
+            )
+            arcade.draw_circle_filled(car_x, car_y, 8, self.colors[driver])
+            arcade.draw_text(
+                driver, car_x, car_y + 12, self.colors[driver], 12, anchor_x="center"
+            )
+
+    def _draw_legend(self):
+        x = MARGIN
+        for driver in self.drivers:
+            arcade.draw_circle_filled(x, LEGEND_Y, 6, self.colors[driver])
+            suffix = " (gauges)" if driver == self.focus_driver else ""
+            arcade.draw_text(
+                f"{driver}{suffix}", x + 14, LEGEND_Y - 7, arcade.color.WHITE, 12
+            )
+            x += 140
 
     def _draw_gauge_panel(self, frame: dict):
         arcade.draw_lrbt_rectangle_filled(
@@ -106,7 +149,7 @@ class ReplayWindow(arcade.Window):
         )
         arcade.draw_line(0, TRACK_AREA_HEIGHT, SCREEN_WIDTH, TRACK_AREA_HEIGHT, arcade.color.WHITE, 2)
 
-        title = f"Driver: {self.driver}   Lap time: {self.elapsed:5.1f}s / {self.duration:5.1f}s"
+        title = f"Focus: {self.focus_driver}   Lap time: {self.elapsed:5.1f}s / {self.duration:5.1f}s"
         arcade.draw_text(
             title, SCREEN_WIDTH / 2, SCREEN_HEIGHT - 30, arcade.color.WHITE, 16,
             anchor_x="center",
@@ -158,19 +201,29 @@ class ReplayWindow(arcade.Window):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Arcade telemetry replay (v1)")
-    parser.add_argument("--driver", default="VER", help="3-letter FastF1 driver code")
+    parser = argparse.ArgumentParser(description="Arcade telemetry replay (multi-driver)")
+    parser.add_argument(
+        "--drivers",
+        default=",".join(REPLAY_DRIVERS),
+        help="Comma-separated 3-letter FastF1 driver codes, e.g. VER,LEC,NOR. "
+        "The first one shown gets the gauge panel.",
+    )
     args = parser.parse_args()
+    requested_drivers = [d.strip().upper() for d in args.drivers.split(",") if d.strip()]
 
     _, _, telemetry_df = load_and_clean_all()
-    lap_df = load_driver_lap_telemetry(telemetry_df, args.driver)
-    if lap_df.empty:
+    lap_dfs = load_multi_driver_lap_telemetry(telemetry_df, requested_drivers)
+    missing = [d for d in requested_drivers if d not in lap_dfs]
+    if missing:
+        print(f"Warning: no cached telemetry for {missing}, skipping.")
+    if not lap_dfs:
         raise SystemExit(
-            f"No cached telemetry for driver '{args.driver}'. "
-            "Run `python -m src.data_ingestion` first, or pick a driver from the cached set."
+            f"No cached telemetry for any of {requested_drivers}. "
+            "Run `python -m src.data_ingestion` first, or pick drivers from the cached set."
         )
 
-    ReplayWindow(lap_df, args.driver)
+    drivers = [d for d in requested_drivers if d in lap_dfs]
+    ReplayWindow(lap_dfs, drivers)
     arcade.run()
 
 

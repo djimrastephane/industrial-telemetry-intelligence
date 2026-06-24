@@ -8,6 +8,9 @@ from src.replay_data import (
     get_frame_at_time,
     lap_duration_seconds,
     load_driver_lap_telemetry,
+    load_multi_driver_lap_telemetry,
+    multi_lap_duration_seconds,
+    multi_track_bounds,
     scale_to_screen,
     track_bounds,
 )
@@ -128,3 +131,28 @@ def test_gauge_needle_point_clamps_out_of_range_values():
     low = gauge_needle_point((0.0, 0.0), radius=10.0, value=-50.0, value_min=0.0, value_max=100.0)
     at_min = gauge_needle_point((0.0, 0.0), radius=10.0, value=0.0, value_min=0.0, value_max=100.0)
     assert low == pytest.approx(at_min)
+
+
+def test_load_multi_driver_lap_telemetry_loads_each_requested_driver(sample_telemetry_df):
+    laps = load_multi_driver_lap_telemetry(sample_telemetry_df, ["VER", "LEC"])
+    assert set(laps.keys()) == {"VER", "LEC"}
+    assert len(laps["VER"]) == 3
+    assert len(laps["LEC"]) == 1
+
+
+def test_load_multi_driver_lap_telemetry_skips_unknown_drivers(sample_telemetry_df):
+    laps = load_multi_driver_lap_telemetry(sample_telemetry_df, ["VER", "ZZZ"])
+    assert set(laps.keys()) == {"VER"}
+
+
+def test_multi_track_bounds_is_union_of_each_driver(sample_telemetry_df):
+    laps = load_multi_driver_lap_telemetry(sample_telemetry_df, ["VER", "LEC"])
+    bounds = multi_track_bounds(laps)
+    # VER spans X 0-200, Y 0-100; LEC is a single point at (50, 25), inside VER's span.
+    assert bounds == (0.0, 200.0, 0.0, 100.0)
+
+
+def test_multi_lap_duration_seconds_is_the_longest_driver(sample_telemetry_df):
+    laps = load_multi_driver_lap_telemetry(sample_telemetry_df, ["VER", "LEC"])
+    # VER's lap spans 2.0s; LEC's single-sample lap has zero duration.
+    assert multi_lap_duration_seconds(laps) == pytest.approx(2.0)

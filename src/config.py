@@ -54,3 +54,7 @@ ASSISTANT_EVIDENCE_WINDOW = 5  # laps either side of the lap in question
 # above - simple and configurable, not derived from the data; see README limitations).
 DECISION_PIT_THRESHOLD_PCT = 5.0
 DECISION_MAX_HORIZON_LAPS = 10
+
+# Phase 8: multi-driver Arcade replay. Default set of drivers shown together
+# on track; telemetry is cached for the full grid, so any 3-letter code works.
+REPLAY_DRIVERS = ["VER", "LEC", "NOR"]
