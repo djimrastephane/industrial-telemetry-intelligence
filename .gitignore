@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Data and cache (regenerated, not committed)
+data/raw/*
+data/processed/*
+data/cache/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/cache/.gitkeep
+
+# Outputs (regenerated, not committed)
+outputs/figures/*
+outputs/reports/*
+!outputs/figures/.gitkeep
+!outputs/reports/.gitkeep
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.idea/
+
+# OS
+.DS_Store
+
+# pytest
+.pytest_cache/

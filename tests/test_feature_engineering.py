@@ -1,0 +1,43 @@
+import pandas as pd
+import pytest
+
+from src.feature_engineering import add_rolling_lap_time, add_stint_lap_number, build_features
+
+
+@pytest.fixture
+def sample_laps_df():
+    return pd.DataFrame(
+        {
+            "Driver": ["VER", "VER", "VER", "VER", "LEC", "LEC"],
+            "Stint": [1, 1, 2, 2, 1, 1],
+            "LapNumber": [1, 2, 3, 4, 1, 2],
+            "LapTimeSeconds": [90.0, 91.0, 89.0, 89.5, 92.0, 93.0],
+        }
+    )
+
+
+def test_add_stint_lap_number_resets_per_stint(sample_laps_df):
+    result = add_stint_lap_number(sample_laps_df)
+    ver_rows = result[result["Driver"] == "VER"]["StintLap"].tolist()
+    assert ver_rows == [1, 2, 1, 2]
+
+
+def test_add_stint_lap_number_resets_per_driver(sample_laps_df):
+    result = add_stint_lap_number(sample_laps_df)
+    lec_rows = result[result["Driver"] == "LEC"]["StintLap"].tolist()
+    assert lec_rows == [1, 2]
+
+
+def test_add_rolling_lap_time_matches_manual_mean(sample_laps_df):
+    result = add_rolling_lap_time(sample_laps_df, window=2)
+    ver_rolling = result[result["Driver"] == "VER"]["RollingLapTimeSeconds"].tolist()
+    assert ver_rolling[0] == pytest.approx(90.0)
+    assert ver_rolling[1] == pytest.approx((90.0 + 91.0) / 2)
+    assert ver_rolling[2] == pytest.approx((91.0 + 89.0) / 2)
+
+
+def test_build_features_adds_expected_columns(sample_laps_df):
+    result = build_features(sample_laps_df)
+    assert "StintLap" in result.columns
+    assert "RollingLapTimeSeconds" in result.columns
+    assert len(result) == len(sample_laps_df)
