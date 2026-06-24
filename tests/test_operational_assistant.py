@@ -5,8 +5,10 @@ from src.operational_assistant import (
     answer_question,
     build_evidence_summary,
     build_prompt,
+    detect_speculative_language,
     parse_question,
     retrieve_evidence,
+    validate_citations,
 )
 
 
@@ -129,3 +131,49 @@ def test_answer_question_with_evidence_calls_llm_with_grounded_prompt(sample_lap
     assert len(captured_prompts) == 1
     assert "Lap 13" in captured_prompts[0]
     assert "110.000" in captured_prompts[0] or "110.0" in captured_prompts[0]
+
+
+def test_validate_citations_accepts_real_lap_numbers(sample_laps_df):
+    evidence = retrieve_evidence(sample_laps_df, "VER", 13, window=2)
+    check = validate_citations("Lap 13 was slow (Lap 13: 110.0s), unlike lap 12.", evidence)
+    assert check["has_citations"] is True
+    assert check["all_citations_valid"] is True
+    assert check["invalid_laps"] == []
+    assert check["cited_laps"] == [12, 13]
+
+
+def test_validate_citations_flags_lap_not_in_evidence(sample_laps_df):
+    evidence = retrieve_evidence(sample_laps_df, "VER", 13, window=2)
+    check = validate_citations("This is similar to what happened at lap 999.", evidence)
+    assert check["all_citations_valid"] is False
+    assert check["invalid_laps"] == [999]
+
+
+def test_validate_citations_no_citations_at_all(sample_laps_df):
+    evidence = retrieve_evidence(sample_laps_df, "VER", 13, window=2)
+    check = validate_citations("Performance dropped significantly.", evidence)
+    assert check["has_citations"] is False
+    assert check["cited_laps"] == []
+
+
+def test_detect_speculative_language_flags_unobserved_causes():
+    flagged = detect_speculative_language("This was likely due to tyre damage from debris.")
+    assert "likely due to" in flagged
+    assert "damage" in flagged
+
+
+def test_detect_speculative_language_clean_answer_has_no_flags():
+    flagged = detect_speculative_language("Lap 13 was 121.081s, compared to 103.145s on lap 12.")
+    assert flagged == []
+
+
+def test_answer_question_includes_citation_check_and_speculation_flags(sample_laps_df):
+    def fake_generate(prompt):
+        return "Lap 13 (110.0s) was an anomaly; this was possibly due to tyre damage."
+
+    result = answer_question(sample_laps_df, "Why did VER lose performance after lap 13?", generate_fn=fake_generate)
+
+    assert result["citation_check"]["all_citations_valid"] is True
+    assert result["citation_check"]["cited_laps"] == [13]
+    assert "possibly" in result["speculative_phrases"]
+    assert "damage" in result["speculative_phrases"]

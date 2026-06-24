@@ -543,6 +543,23 @@ with assistant_tab:
                 st.markdown("**Answer**")
                 st.write(result["answer"])
 
+                citation_check = result["citation_check"]
+                if not citation_check["has_citations"]:
+                    st.error("This answer cites no lap numbers at all - it isn't grounded in the evidence.")
+                elif not citation_check["all_citations_valid"]:
+                    st.error(
+                        f"This answer cites lap(s) {citation_check['invalid_laps']} that aren't in the "
+                        "retrieved evidence - treat it as unverified."
+                    )
+                else:
+                    st.success(f"All cited laps ({citation_check['cited_laps']}) match the retrieved evidence.")
+
+                if result["speculative_phrases"]:
+                    st.warning(
+                        "Flagged phrasing that may go beyond the evidence (heuristic check, not a hard "
+                        f"block - review the answer above): {', '.join(result['speculative_phrases'])}"
+                    )
+
     st.divider()
     st.subheader("From Evidence Retrieval to Trustworthy Explanations")
     st.markdown(

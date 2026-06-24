@@ -339,18 +339,28 @@ year from 2020-2025 (~6,500 laps).
 - Runs against a local Ollama server rather than a hosted API, specifically so the same
   architecture would work against confidential real ESP/SCADA data that can't be sent to a
   third-party provider. *(Phase 6)*
+- The LLM's role is deliberately narrow: it only explains results the Python pipeline already
+  computed, never performs its own analysis. The system prompt requires a citation
+  (`(Lap N: value)`) for every factual claim and explicitly forbids upgrading a correlation
+  (e.g. a tyre change on the same lap as a slow lap) into a diagnosis (e.g. "tyre damage")
+  unless that cause is literally in the evidence. *(Phase 6)*
+- Two code-level checks verify the model's compliance rather than just trusting the prompt:
+  `validate_citations()` extracts every lap number the answer cites and checks it actually
+  exists in the retrieved evidence (catches a fabricated lap reference); a heuristic
+  `detect_speculative_language()` flags phrases like "likely due to" or "tyre damage" for human
+  review. Both are surfaced directly in the dashboard. *(Phase 6)*
 - Validated on a real example: asking why BOT lost performance at lap 13 of the actual 2024
-  Bahrain race correctly identifies the pit stop onto a fresh HARD tyre (`TyreLife` reset to 1,
-  flagged as a z-score anomaly) as the cause, citing the exact lap times - not a fabricated
-  explanation. *(Phase 6 success criteria: evidence-backed explanations, no hallucinated
-  conclusions)*
+  Bahrain race correctly cites the exact lap data (the pit stop onto a fresh HARD tyre,
+  `TyreLife` reset to 1, flagged as a z-score anomaly) and explicitly **declines to diagnose** a
+  root cause beyond what the evidence shows, rather than guessing. *(Phase 6 success criteria:
+  evidence-backed explanations, no hallucinated conclusions)*
 - A "Operational Assistant" dashboard tab: example/custom question input, the parsed
-  driver/lap, an expandable view of the exact evidence text given to the LLM, and the final
-  answer. *(Phase 6)*
+  driver/lap, an expandable view of the exact evidence text given to the LLM, the answer, the
+  citation-validation result, and any flagged speculative phrasing. *(Phase 6)*
 - pytest coverage for ingestion round-tripping, feature engineering, seasonal analysis, fleet
-  analysis, predictive models, the operational assistant (with the LLM call mocked/injected so
-  tests don't require Ollama running), and the replay's geometry/interpolation helpers (62
-  tests total).
+  analysis, predictive models, the operational assistant (citation validation, speculative-
+  language detection, and the LLM call mocked/injected so tests don't require Ollama running),
+  and the replay's geometry/interpolation helpers (68 tests total).
 
 Fastest-lap telemetry (speed/throttle/brake/X/Y position) is cached for every driver in the
 Bahrain race session, so the Race Detail tab's driver selector, telemetry comparison, and the
@@ -403,15 +413,20 @@ Arcade replay all cover the full grid. `src/config.py:COMPARISON_DRIVERS` only s
   that supports the target question shape. Questions that don't mention a 3-letter driver code
   and the word "lap" followed by a number won't be parsed, even if a human would understand them.
 - The LLM's *causal reasoning* is only as good as the model, even when the *facts* it's given
-  are correct: in testing, the assistant correctly cited the right lap/tyre data but sometimes
-  added a speculative causal gloss (e.g. guessing "possible tyre damage") beyond what the
-  evidence actually established (the real explanation is just a normal out-lap on a fresh
-  tyre after a pit stop). Grounding prevents fabricated *facts*, not necessarily an
-  overconfident *interpretation* of those facts - a real limitation of the current prompt,
-  not papered over here.
+  are correct: an early test run had the assistant add a speculative causal gloss (e.g.
+  guessing "possible tyre damage") beyond what the evidence established (the real explanation
+  is just a normal out-lap on a fresh tyre after a pit stop). The narrower system prompt and
+  `detect_speculative_language()` flag reduce and surface this, but don't fully eliminate it -
+  `detect_speculative_language()` is a keyword heuristic, so it both under-flags (different
+  phrasing for the same speculation) and over-flags (e.g. it flags "damage" even when the model
+  uses the word only to say damage is *not* shown by the evidence). Grounding prevents
+  fabricated *facts* more reliably than it prevents overconfident *interpretation* of them.
+- `validate_citations()` only checks that cited lap numbers exist in the evidence window - it
+  cannot verify that the model paired the right lap with the right *value* (e.g. citing a real
+  lap number but misquoting its lap time), since that would require re-parsing the answer's
+  prose for numbers and matching them positionally, which isn't implemented yet.
 - No decision-support recommendations (e.g. an actual pit-stop/maintenance call) yet - Phase 6
   stops at explanation, not action.
-- No LLM/RAG explanation layer yet.
 
 ## Roadmap
 
@@ -442,11 +457,14 @@ Each phase is built and verified end-to-end on real data before the next one sta
   reported honestly) and explain model outputs (coefficients/feature importances).*
 - **Phase 6 — Operational Intelligence Assistant** ✅ done. Answers operational questions (e.g.
   *"Why did Driver X lose performance after lap 32?"*) by retrieving telemetry evidence first,
-  then asking a local LLM (Ollama) to explain it - chosen over a hosted API so the same
-  approach works against confidential real ESP/SCADA data. *Success criteria met:
-  evidence-backed explanations (validated on the real BOT lap-13 anomaly); no hallucinated
-  conclusions (the LLM is never called without grounding evidence) - though see limitations
-  for a real caveat about speculative causal framing within an otherwise-grounded answer.*
+  then asking a local LLM (Ollama) - in a deliberately narrow role (explain pre-computed
+  results only, cite every claim, never diagnose unobserved causes) - to explain it. Chosen
+  over a hosted API so the same approach works against confidential real ESP/SCADA data.
+  *Success criteria met: evidence-backed explanations (validated on the real BOT lap-13
+  anomaly, including an explicit refusal to diagnose beyond the evidence); no hallucinated
+  conclusions, checked at the code level via `validate_citations()` and
+  `detect_speculative_language()`, not just prompt instructions - though see limitations for
+  the remaining gaps in those checks.*
 
 ## Architecture rule
 

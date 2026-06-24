@@ -22,12 +22,31 @@ from src import config
 from src.anomaly_detection import flag_anomalies
 from src.degradation_analysis import degradation_per_stint
 
-SYSTEM_INSTRUCTIONS = """You are an industrial telemetry analyst assistant.
-Answer the question using ONLY the evidence provided below. Cite specific
-lap numbers and values from the evidence in your answer.
-If the evidence does not clearly support a confident answer, say so plainly
-instead of guessing. Do not invent any data point that is not in the
-evidence below."""
+SYSTEM_INSTRUCTIONS = """You are a narrow-scope reporting assistant for an industrial telemetry system.
+Your only job is to explain results that have ALREADY been computed by the
+Python pipeline below. You do not perform any new analysis, calculation, or
+diagnosis of your own.
+
+Rules:
+1. Use ONLY the evidence provided below. Never state a fact, number, or
+   event that is not explicitly present in the evidence.
+2. For every factual claim, cite the exact lap number and metric value it
+   comes from, in the form "(Lap N: <value>)". An answer with no citations
+   is not acceptable.
+3. Do not speculate about unobserved causes (e.g. "tyre damage", "a
+   mechanical issue", "track conditions") unless that cause is explicitly
+   present in the evidence. If the evidence shows a correlation (e.g. a
+   tyre change at the same lap as a slow lap) but not a root cause, describe
+   the correlation only - do not upgrade it to a diagnosis.
+4. If the evidence does not clearly support a confident answer, say so
+   plainly instead of guessing."""
+
+SPECULATIVE_PHRASES = [
+    "likely due to", "may have", "might have", "possibly", "probably",
+    "could be due to", "could indicate", "may indicate", "potential issue",
+    "potential problem", "suggests that there was", "appears to be due to",
+    "damage", "malfunction", "mechanical issue",
+]
 
 
 def parse_question(question: str, known_drivers: list[str]) -> dict:
@@ -120,6 +139,31 @@ def build_prompt(question: str, evidence_summary: str) -> str:
     return f"{SYSTEM_INSTRUCTIONS}\n\nEvidence:\n{evidence_summary}\n\nQuestion: {question}\n\nAnswer:"
 
 
+def validate_citations(answer: str, evidence: dict) -> dict:
+    """Code-level check of whether the answer's lap citations actually exist
+    in the evidence it was given - this verifies the model's compliance with
+    the citation rule rather than just trusting the prompt instruction.
+    """
+    cited_laps = sorted({int(n) for n in re.findall(r"[Ll]ap\s+(\d+)", answer)})
+    valid_laps = set(evidence["window_laps"]["LapNumber"].astype(int).tolist())
+    invalid_laps = [lap for lap in cited_laps if lap not in valid_laps]
+
+    return {
+        "cited_laps": cited_laps,
+        "invalid_laps": invalid_laps,
+        "has_citations": len(cited_laps) > 0,
+        "all_citations_valid": len(invalid_laps) == 0,
+    }
+
+
+def detect_speculative_language(answer: str) -> list[str]:
+    """Flags phrases that go beyond restating evidence into unobserved-cause
+    speculation (e.g. "tyre damage") - a heuristic transparency flag, not a
+    guarantee the model avoided speculating in some other phrasing."""
+    found = [phrase for phrase in SPECULATIVE_PHRASES if phrase.lower() in answer.lower()]
+    return found
+
+
 def call_ollama(
     prompt: str,
     model: str = config.OLLAMA_MODEL,
@@ -176,6 +220,8 @@ def answer_question(laps_df: pd.DataFrame, question: str, generate_fn=call_ollam
         "prompt": prompt,
         "answer": answer,
         "grounded": True,
+        "citation_check": validate_citations(answer, evidence),
+        "speculative_phrases": detect_speculative_language(answer),
     }
 
 
