@@ -108,3 +108,32 @@ def plot_speed_trap_trend(speed_df: pd.DataFrame) -> go.Figure:
         labels={"RoundNumber": "Round", "AvgSpeedTrap": "Avg Speed Trap (km/h)"},
     )
     return fig
+
+
+def plot_relative_pace_trend(pace_df: pd.DataFrame, entity_col: str) -> go.Figure:
+    """Pace relative to that year's fastest lap, across years. Lower is
+    better, so the y-axis is inverted to match how the gap is usually read."""
+    fig = px.line(
+        pace_df,
+        x="Year",
+        y="RelativePacePct",
+        color=entity_col,
+        markers=True,
+        title=f"Multi-Year Relative Pace Trend by {entity_col}",
+        labels={"Year": "Year", "RelativePacePct": "Pace vs Year's Fastest Lap (%)"},
+    )
+    fig.update_yaxes(autorange="reversed")
+    return fig
+
+
+def plot_degradation_by_year(degradation_df: pd.DataFrame) -> go.Figure:
+    fig = px.line(
+        degradation_df,
+        x="Year",
+        y="AvgDegradationSecondsPerLap",
+        color="Driver",
+        markers=True,
+        title="Multi-Year Tyre Degradation Trend by Driver",
+        labels={"Year": "Year", "AvgDegradationSecondsPerLap": "Avg Degradation (s/lap)"},
+    )
+    return fig

@@ -5,6 +5,8 @@ coordinate-scaling logic can be unit tested without an actual display -
 the same "test before complexity" split used elsewhere in this project.
 """
 
+import math
+
 import numpy as np
 import pandas as pd
 
@@ -96,6 +98,28 @@ def checker_line_segments(
         end = (point_a[0] + (point_b[0] - point_a[0]) * t1, point_a[1] + (point_b[1] - point_a[1]) * t1)
         segments.append((start, end, i % 2 == 0))
     return segments
+
+
+def gauge_needle_point(
+    center: tuple[float, float],
+    radius: float,
+    value: float,
+    value_min: float,
+    value_max: float,
+    start_angle_deg: float = -120.0,
+    end_angle_deg: float = 120.0,
+) -> tuple[float, float]:
+    """Tip of a speedometer-style needle for `value` on a dial swept from
+    `start_angle_deg` (lower-left, at value_min) through 0 (straight up) to
+    `end_angle_deg` (lower-right, at value_max)."""
+    clamped = min(max(value, value_min), value_max)
+    span = value_max - value_min
+    fraction = (clamped - value_min) / span if span else 0.0
+    angle_deg = start_angle_deg + fraction * (end_angle_deg - start_angle_deg)
+    angle_rad = math.radians(angle_deg)
+
+    cx, cy = center
+    return cx + radius * math.sin(angle_rad), cy + radius * math.cos(angle_rad)
 
 
 def get_frame_at_time(lap_df: pd.DataFrame, elapsed_seconds: float) -> dict:

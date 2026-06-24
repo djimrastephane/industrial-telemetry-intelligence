@@ -21,6 +21,10 @@ def load_season_laps() -> pd.DataFrame:
     return pd.read_parquet(config.SEASON_LAPS_FILE)
 
 
+def load_fleet_laps() -> pd.DataFrame:
+    return pd.read_parquet(config.FLEET_LAPS_FILE)
+
+
 def clean_laps(laps_df: pd.DataFrame) -> pd.DataFrame:
     """Drop laps with no recorded lap time (in/out laps, red flags, etc.)."""
     cleaned = laps_df.dropna(subset=["LapTimeSeconds"]).copy()
@@ -55,6 +59,17 @@ def load_and_clean_all() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 
 def load_and_clean_season() -> pd.DataFrame:
     return clean_season_laps(load_season_laps())
+
+
+def clean_fleet_laps(fleet_laps_df: pd.DataFrame) -> pd.DataFrame:
+    """Drop laps with no recorded lap time or no running position."""
+    cleaned = fleet_laps_df.dropna(subset=["LapTimeSeconds", "Position"]).copy()
+    cleaned = cleaned.sort_values(["Year", "Driver", "LapNumber"]).reset_index(drop=True)
+    return cleaned
+
+
+def load_and_clean_fleet() -> pd.DataFrame:
+    return clean_fleet_laps(load_fleet_laps())
 
 
 if __name__ == "__main__":

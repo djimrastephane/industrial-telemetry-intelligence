@@ -145,6 +145,56 @@ def build_season_dataset(
     return pd.concat(frames, ignore_index=True)
 
 
+def get_fleet_lap_summary(
+    session: fastf1.core.Session,
+    year: int,
+    event_name: str,
+) -> pd.DataFrame:
+    """Lean per-lap summary for multi-year fleet monitoring: the same race,
+    every year, so the same lean columns as season monitoring but tagged by
+    Year instead of RoundNumber."""
+    columns = [
+        "Driver",
+        "Team",
+        "LapNumber",
+        "LapTime",
+        "Position",
+        "SpeedST",
+        "Compound",
+        "TyreLife",
+        "Stint",
+    ]
+    laps = session.laps.loc[:, columns].copy()
+    laps["LapTimeSeconds"] = laps["LapTime"].dt.total_seconds()
+    laps = laps.drop(columns=["LapTime"])
+    laps["Year"] = year
+    laps["EventName"] = event_name
+    return laps
+
+
+def build_fleet_dataset(
+    years: list[int] = config.FLEET_YEARS,
+    event: str = config.FLEET_EVENT_NAME,
+) -> pd.DataFrame:
+    """Load the same race across every year in `years` and concatenate the
+    lean lap summary, skipping (with a warning) any year that fails to load."""
+    enable_cache()
+    frames = []
+    for year in years:
+        try:
+            session = fastf1.get_session(year, event, "R")
+            session.load(telemetry=False, weather=False)
+            event_name = session.event["EventName"]
+            frames.append(get_fleet_lap_summary(session, year, event_name))
+            print(f"{year} {event_name}: {len(frames[-1])} laps")
+        except Exception as exc:
+            print(f"Skipping {year}: {exc}")
+
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True)
+
+
 def save_processed(
     laps_df: pd.DataFrame,
     weather_df: pd.DataFrame,
@@ -177,12 +227,30 @@ def run_season_ingestion(
     return season_laps_df
 
 
+def save_fleet_laps(fleet_laps_df: pd.DataFrame) -> None:
+    fleet_laps_df.to_parquet(config.FLEET_LAPS_FILE, index=False)
+
+
+def run_fleet_ingestion(
+    years: list[int] = config.FLEET_YEARS,
+    event: str = config.FLEET_EVENT_NAME,
+) -> pd.DataFrame:
+    fleet_laps_df = build_fleet_dataset(years, event)
+    save_fleet_laps(fleet_laps_df)
+    return fleet_laps_df
+
+
 if __name__ == "__main__":
     import sys
 
-    if len(sys.argv) > 1 and sys.argv[1] == "season":
+    mode = sys.argv[1] if len(sys.argv) > 1 else None
+
+    if mode == "season":
         season_laps = run_season_ingestion()
         print(f"Season laps: {season_laps.shape}")
+    elif mode == "fleet":
+        fleet_laps = run_fleet_ingestion()
+        print(f"Fleet laps: {fleet_laps.shape}")
     else:
         laps, weather, telemetry = run_ingestion()
         print(f"Laps: {laps.shape}")

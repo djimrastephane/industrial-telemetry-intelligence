@@ -19,7 +19,12 @@ from src.baseline_models import (
     degradation_summary,
     fastest_lap_per_driver,
 )
-from src.data_cleaning import load_and_clean_all, load_and_clean_season
+from src.data_cleaning import load_and_clean_all, load_and_clean_fleet, load_and_clean_season
+from src.fleet_analysis import (
+    degradation_by_year,
+    driver_relative_pace_by_year,
+    fleet_benchmark_table,
+)
 from src.seasonal_analysis import (
     driver_position_trend,
     season_driver_kpis,
@@ -27,9 +32,11 @@ from src.seasonal_analysis import (
     speed_trap_trend,
 )
 from src.visualisation import (
+    plot_degradation_by_year,
     plot_driver_comparison,
     plot_lap_times,
     plot_position_trend,
+    plot_relative_pace_trend,
     plot_speed_trace,
     plot_speed_trap_trend,
     plot_throttle_brake_trace,
@@ -51,7 +58,9 @@ st.markdown(
     """
 )
 
-race_tab, season_tab = st.tabs(["Race Detail (Phase 1-2)", "Season Monitoring (Phase 3)"])
+race_tab, season_tab, fleet_tab = st.tabs(
+    ["Race Detail (Phase 1-2)", "Season Monitoring (Phase 3)", "Fleet Monitoring (Phase 4)"]
+)
 
 with race_tab:
     st.subheader("Data Loading Status")
@@ -216,5 +225,82 @@ with season_tab:
         - **Speed trap trend = aggregated sensor KPI.** Rather than every raw telemetry sample, this is a
           single high-frequency reading aggregated per cycle - the same compression engineers apply when
           tracking peak pressure or peak current per well test instead of storing the full waveform.
+        """
+    )
+
+with fleet_tab:
+    st.subheader("Fleet Data Loading Status")
+
+    if not config.FLEET_LAPS_FILE.exists():
+        st.error(
+            "Multi-year data not found. Run `python -m src.data_ingestion fleet` first to download "
+            f"and cache {config.FLEET_EVENT_NAME} for every year in "
+            "src/config.py:FLEET_YEARS."
+        )
+        st.stop()
+
+    fleet_laps_df = load_and_clean_fleet()
+    years_loaded = sorted(fleet_laps_df["Year"].unique())
+    st.success(
+        f"Loaded {config.FLEET_EVENT_NAME}: {len(years_loaded)} years ({min(years_loaded)}-{max(years_loaded)}), "
+        f"{fleet_laps_df['Driver'].nunique()} distinct drivers, {len(fleet_laps_df)} laps."
+    )
+    if len(years_loaded) < len(config.FLEET_YEARS):
+        st.warning(
+            f"Only {len(years_loaded)} of {len(config.FLEET_YEARS)} configured years are cached so far "
+            "- fleet trends below reflect years loaded to date."
+        )
+
+    st.divider()
+    st.subheader("Driver Selection")
+    fleet_drivers = sorted(fleet_laps_df["Driver"].unique())
+    default_fleet_drivers = [d for d in config.COMPARISON_DRIVERS if d in fleet_drivers] or fleet_drivers[:2]
+    selected_fleet_drivers = st.multiselect(
+        "Drivers to plot", fleet_drivers, default=default_fleet_drivers
+    )
+
+    pace_df = driver_relative_pace_by_year(fleet_laps_df)
+    degradation_df = degradation_by_year(fleet_laps_df)
+
+    st.subheader("Multi-Year Relative Pace Trend")
+    st.write(
+        "Pace shown as % behind that year's single fastest lap, since raw lap times aren't "
+        "directly comparable across years of changing car regulations."
+    )
+    st.plotly_chart(
+        plot_relative_pace_trend(pace_df[pace_df["Driver"].isin(selected_fleet_drivers)], "Driver"),
+        use_container_width=True,
+    )
+
+    st.subheader("Multi-Year Tyre Degradation Trend")
+    st.plotly_chart(
+        plot_degradation_by_year(degradation_df[degradation_df["Driver"].isin(selected_fleet_drivers)]),
+        use_container_width=True,
+    )
+
+    st.divider()
+    st.subheader("Benchmarking Table and Year-over-Year Shift")
+    st.write(
+        "Shift: Declined / Improved / Stable, comparing each driver's relative pace this year "
+        "against their relative pace the previous year they appeared in this race."
+    )
+    st.dataframe(
+        fleet_benchmark_table(fleet_laps_df).query("Driver in @selected_fleet_drivers"),
+        use_container_width=True,
+    )
+
+    st.divider()
+    st.subheader("From Multi-Year Comparison to Fleet Benchmarking")
+    st.markdown(
+        """
+        - **Year = long observation window.** Comparing the same race across years is the same shape as
+          comparing a fleet of wells, ESPs, or turbines across multiple years of operation.
+        - **Relative pace, not raw lap time = fair benchmarking.** Cars and regulations change every year,
+          the same way equipment generations and operating conditions change for industrial assets -
+          benchmarking against the best performer *in the same period* controls for that, instead of
+          comparing raw numbers across eras that aren't really comparable.
+        - **Year-over-year Shift = structural change detector.** A single bad season is normal variation;
+          a sustained shift across consecutive years is the long-horizon equivalent of flagging that an
+          asset's baseline performance has genuinely changed, not just had a noisy day.
         """
     )

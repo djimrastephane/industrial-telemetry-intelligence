@@ -35,3 +35,8 @@ ANOMALY_ZSCORE_THRESHOLD = 2.5
 # Phase 3: season monitoring (race rounds only, excludes pre-season testing)
 SEASON_ROUNDS = list(range(1, 25))  # 2024 had 24 points-paying rounds
 SEASON_LAPS_FILE = PROCESSED_DIR / "season_laps.parquet"
+
+# Phase 4: multi-year fleet monitoring (same race, every year, to compare across time)
+FLEET_EVENT_NAME = "Bahrain Grand Prix"
+FLEET_YEARS = list(range(2020, 2026))
+FLEET_LAPS_FILE = PROCESSED_DIR / "fleet_laps.parquet"

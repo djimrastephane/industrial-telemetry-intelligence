@@ -4,6 +4,7 @@ import pytest
 from src.replay_data import (
     checker_line_segments,
     compute_track_edges,
+    gauge_needle_point,
     get_frame_at_time,
     lap_duration_seconds,
     load_driver_lap_telemetry,
@@ -103,3 +104,27 @@ def test_checker_line_segments_covers_full_span_and_alternates():
         assert end_prev == pytest.approx(start_next)
     # Alternates black/white starting with black.
     assert [is_black for _, _, is_black in segments] == [True, False, True, False, True, False]
+
+
+def test_gauge_needle_point_min_value_points_lower_left():
+    x, y = gauge_needle_point((0.0, 0.0), radius=10.0, value=0.0, value_min=0.0, value_max=100.0)
+    assert x < 0
+    assert y < 0
+
+
+def test_gauge_needle_point_max_value_points_lower_right():
+    x, y = gauge_needle_point((0.0, 0.0), radius=10.0, value=100.0, value_min=0.0, value_max=100.0)
+    assert x > 0
+    assert y < 0
+
+
+def test_gauge_needle_point_midpoint_points_straight_up():
+    x, y = gauge_needle_point((0.0, 0.0), radius=10.0, value=50.0, value_min=0.0, value_max=100.0)
+    assert x == pytest.approx(0.0, abs=1e-9)
+    assert y == pytest.approx(10.0)
+
+
+def test_gauge_needle_point_clamps_out_of_range_values():
+    low = gauge_needle_point((0.0, 0.0), radius=10.0, value=-50.0, value_min=0.0, value_max=100.0)
+    at_min = gauge_needle_point((0.0, 0.0), radius=10.0, value=0.0, value_min=0.0, value_max=100.0)
+    assert low == pytest.approx(at_min)

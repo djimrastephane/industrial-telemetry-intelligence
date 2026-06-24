@@ -1,11 +1,12 @@
-"""Arcade replay v1: one driver's fastest lap, position dot + live HUD.
+"""Arcade replay v1: one driver's fastest lap, position dot + live gauges.
 
-This is the "digital control room" view: a car moving around the track
-with a live speed/throttle/brake/gear readout, built on the same cached
-fastest-lap telemetry as the Race Detail dashboard tab. Tyre-degradation
-colour, anomaly alerts, pit-stop prompts, an asset-health score, and full
-multi-lap replay are deliberately left out of this first version - see
-the README roadmap for where those land.
+This is the "digital control room" view: a car moving around the track on
+the bottom of the window, with a gauge cluster (speed dial, throttle dial,
+brake lamp, gear box) across the top - the same instrument-panel layout as
+a SCADA operator screen monitoring one asset. Tyre-degradation colour,
+anomaly alerts, pit-stop prompts, an asset-health score, and full multi-lap
+replay are deliberately left out of this first version - see the README
+roadmap for where those land.
 
 Run with: python app/arcade_replay.py --driver VER
 """
@@ -22,6 +23,7 @@ from src.data_cleaning import load_and_clean_all
 from src.replay_data import (
     checker_line_segments,
     compute_track_edges,
+    gauge_needle_point,
     get_frame_at_time,
     lap_duration_seconds,
     load_driver_lap_telemetry,
@@ -30,10 +32,25 @@ from src.replay_data import (
 )
 
 SCREEN_WIDTH = 1000
-SCREEN_HEIGHT = 700
+SCREEN_HEIGHT = 850
+GAUGE_PANEL_HEIGHT = 260  # top strip reserved for the instrument cluster
+TRACK_AREA_HEIGHT = SCREEN_HEIGHT - GAUGE_PANEL_HEIGHT  # track is drawn below the gauges
+
 MARGIN = 60
-TRACK_SHIFT_X = 120  # pixels; pushes the track right, away from the HUD text
+TRACK_SHIFT_X = 120  # pixels; pushes the track right, away from the left edge
 TRACK_HALF_WIDTH = 10  # pixels either side of the centerline (FastF1 has no real track width)
+
+SPEED_MAX_KPH = 350.0
+THROTTLE_MAX_PCT = 100.0
+
+GAUGE_CENTER_Y = TRACK_AREA_HEIGHT + GAUGE_PANEL_HEIGHT * 0.48  # vertical center within the panel
+SPEED_GAUGE_CENTER = (180, GAUGE_CENTER_Y)
+THROTTLE_GAUGE_CENTER = (420, GAUGE_CENTER_Y)
+BRAKE_LAMP_CENTER = (650, GAUGE_CENTER_Y)
+GEAR_BOX_CENTER = (850, GAUGE_CENTER_Y)
+GAUGE_RADIUS = 75
+BRAKE_LAMP_RADIUS = 40
+GEAR_BOX_HALF_SIZE = 40
 
 
 class ReplayWindow(arcade.Window):
@@ -46,7 +63,7 @@ class ReplayWindow(arcade.Window):
         self.duration = lap_duration_seconds(lap_df)
         self.elapsed = 0.0
         centerline = [
-            self._shift(scale_to_screen(x, y, self.bounds, SCREEN_WIDTH, SCREEN_HEIGHT, MARGIN))
+            self._shift(scale_to_screen(x, y, self.bounds, SCREEN_WIDTH, TRACK_AREA_HEIGHT, MARGIN))
             for x, y in zip(lap_df["X"], lap_df["Y"])
         ]
         self.left_edge, self.right_edge = compute_track_edges(centerline, TRACK_HALF_WIDTH)
@@ -66,6 +83,11 @@ class ReplayWindow(arcade.Window):
 
     def on_draw(self):
         self.clear()
+        frame = get_frame_at_time(self.lap_df, self.elapsed)
+        self._draw_track(frame)
+        self._draw_gauge_panel(frame)
+
+    def _draw_track(self, frame: dict):
         arcade.draw_line_strip(self.left_edge, arcade.color.LIGHT_GRAY, 3)
         arcade.draw_line_strip(self.right_edge, arcade.color.LIGHT_GRAY, 3)
 
@@ -73,22 +95,66 @@ class ReplayWindow(arcade.Window):
             color = arcade.color.BLACK if is_black else arcade.color.WHITE
             arcade.draw_line(sx, sy, ex, ey, color, line_width=6)
 
-        frame = get_frame_at_time(self.lap_df, self.elapsed)
         car_x, car_y = self._shift(
-            scale_to_screen(frame["X"], frame["Y"], self.bounds, SCREEN_WIDTH, SCREEN_HEIGHT, MARGIN)
+            scale_to_screen(frame["X"], frame["Y"], self.bounds, SCREEN_WIDTH, TRACK_AREA_HEIGHT, MARGIN)
         )
         arcade.draw_circle_filled(car_x, car_y, 8, arcade.color.RED)
 
-        hud_lines = [
-            f"Driver: {self.driver}",
-            f"Lap time: {self.elapsed:5.1f}s / {self.duration:5.1f}s",
-            f"Speed: {frame['Speed']:.0f} km/h",
-            f"Throttle: {frame['Throttle']:.0f}%",
-            f"Brake: {'ON' if frame['Brake'] else 'OFF'}",
-            f"Gear: {frame['Gear']}",
-        ]
-        for i, line in enumerate(hud_lines):
-            arcade.draw_text(line, 20, SCREEN_HEIGHT - 30 - i * 22, arcade.color.WHITE, 14)
+    def _draw_gauge_panel(self, frame: dict):
+        arcade.draw_lrbt_rectangle_filled(
+            0, SCREEN_WIDTH, TRACK_AREA_HEIGHT, SCREEN_HEIGHT, (30, 30, 30)
+        )
+        arcade.draw_line(0, TRACK_AREA_HEIGHT, SCREEN_WIDTH, TRACK_AREA_HEIGHT, arcade.color.WHITE, 2)
+
+        title = f"Driver: {self.driver}   Lap time: {self.elapsed:5.1f}s / {self.duration:5.1f}s"
+        arcade.draw_text(
+            title, SCREEN_WIDTH / 2, SCREEN_HEIGHT - 30, arcade.color.WHITE, 16,
+            anchor_x="center",
+        )
+
+        self._draw_dial(SPEED_GAUGE_CENTER, frame["Speed"], 0, SPEED_MAX_KPH, "SPEED", " km/h")
+        self._draw_dial(THROTTLE_GAUGE_CENTER, frame["Throttle"], 0, THROTTLE_MAX_PCT, "THROTTLE", "%")
+        self._draw_brake_lamp(BRAKE_LAMP_CENTER, frame["Brake"])
+        self._draw_gear_box(GEAR_BOX_CENTER, frame["Gear"])
+
+    @staticmethod
+    def _draw_dial(center, value, value_min, value_max, label, unit):
+        cx, cy = center
+        arcade.draw_circle_outline(cx, cy, GAUGE_RADIUS, arcade.color.WHITE, border_width=3)
+        needle_x, needle_y = gauge_needle_point(center, GAUGE_RADIUS - 10, value, value_min, value_max)
+        arcade.draw_line(cx, cy, needle_x, needle_y, arcade.color.RED, line_width=3)
+        arcade.draw_circle_filled(cx, cy, 5, arcade.color.WHITE)
+        arcade.draw_text(
+            f"{value:.0f}{unit}", cx, cy - GAUGE_RADIUS - 22, arcade.color.WHITE, 14, anchor_x="center"
+        )
+        arcade.draw_text(
+            label, cx, cy + GAUGE_RADIUS + 6, arcade.color.LIGHT_GRAY, 12, anchor_x="center"
+        )
+
+    @staticmethod
+    def _draw_brake_lamp(center, is_braking: bool):
+        cx, cy = center
+        lamp_color = arcade.color.RED if is_braking else (60, 60, 60)
+        arcade.draw_circle_filled(cx, cy, BRAKE_LAMP_RADIUS, lamp_color)
+        arcade.draw_circle_outline(cx, cy, BRAKE_LAMP_RADIUS, arcade.color.WHITE, border_width=2)
+        arcade.draw_text(
+            "BRAKE", cx, cy - BRAKE_LAMP_RADIUS - 22, arcade.color.WHITE, 12, anchor_x="center"
+        )
+
+    @staticmethod
+    def _draw_gear_box(center, gear: int):
+        cx, cy = center
+        arcade.draw_lrbt_rectangle_outline(
+            cx - GEAR_BOX_HALF_SIZE, cx + GEAR_BOX_HALF_SIZE,
+            cy - GEAR_BOX_HALF_SIZE, cy + GEAR_BOX_HALF_SIZE,
+            arcade.color.WHITE, border_width=3,
+        )
+        arcade.draw_text(
+            str(gear), cx, cy, arcade.color.WHITE, 30, anchor_x="center", anchor_y="center"
+        )
+        arcade.draw_text(
+            "GEAR", cx, cy - GEAR_BOX_HALF_SIZE - 22, arcade.color.LIGHT_GRAY, 12, anchor_x="center"
+        )
 
 
 def main():
