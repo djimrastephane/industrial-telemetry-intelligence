@@ -14,8 +14,10 @@ and degradation/failure-relevant.
 
 ## Screenshots
 
-**Race Detail (Phase 1-2)** - lap time trend, tyre degradation, telemetry traces, baseline
-metrics, and the anomaly table for any two drivers in one race.
+**Race Detail (Phase 1-2)** - tyre degradation and the speed/throttle/brake telemetry traces:
+the closest public analogue to a real ESP/SCADA multi-sensor stream, which is the actual point
+of this project (the dashboard also has lap time trend, baseline metrics, and an anomaly table,
+not pictured here).
 
 ![Race Detail tab](assets/screenshots/race_detail_tab.png)
 
