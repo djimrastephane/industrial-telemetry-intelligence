@@ -29,6 +29,24 @@ anomaly detection, degradation analysis, and a dashboard — on data that is rea
 structure and freely available, so the same pipeline can later be pointed at proprietary
 ESP/SCADA/production data with minimal rework.
 
+## Project vision
+
+The end state is an **Industrial Telemetry Intelligence Platform** that, on F1 telemetry as
+its public surrogate, ultimately supports:
+
+- Multi-season telemetry analysis
+- Fleet-level performance monitoring
+- Degradation tracking
+- Anomaly detection
+- Predictive forecasting
+- Decision support
+- Interactive operational replay
+- LLM-assisted explanations
+
+That final architecture is **not** built up front. Per the Karpathy method, each phase below
+is built, run on real data, and verified before the next one starts — see
+[Architecture rule](#architecture-rule) and [Roadmap](#roadmap).
+
 ## Oil and gas analogy
 
 - **ESP sensors**: An electric submersible pump streams motor temperature, vibration, intake
@@ -128,20 +146,31 @@ pip install -r requirements.txt
    Tests use synthetic fixtures and a temp directory — they never overwrite the real
    downloaded data in `data/processed/`.
 
-## What works (Phase 1)
+## Status: Phase 1 and most of Phase 2 done
+
+Dataset so far: 2024 Bahrain Grand Prix, Race session, all 20 drivers' lap/weather data plus
+cached telemetry for two drivers.
 
 - End-to-end ingestion of real FastF1 data (laps, weather, telemetry, tyre compound/life,
-  sector times) for the 2024 Bahrain GP race, cached locally as parquet.
-- Cleaning that drops laps with no recorded time (in/out laps, etc.).
-- Feature engineering: stint-relative lap counter, rolling lap time.
-- Baselines: average lap time per driver, fastest lap per driver, consistency score (lap
-  time std dev), linear lap-time degradation slope per tyre stint.
-- Anomaly detection: per-driver lap-time z-score with a configurable threshold.
+  sector times), cached locally as parquet. *(Phase 1)*
+- Cleaning that drops laps with no recorded time (in/out laps, etc.). *(Phase 1)*
+- Feature engineering: stint-relative lap counter, rolling lap time. *(Phase 1)*
 - Plotly visualizations: lap time trend, tyre life vs lap time, speed trace, throttle/brake
-  trace, two-driver comparison.
-- A working Streamlit dashboard wiring all of the above together, with an explicit section
-  translating each metric back to the industrial asset-monitoring framing.
+  trace. *(Phase 1)*
+- A working Streamlit dashboard with data-loading status and a driver selector covering all
+  20 drivers. *(Phase 1 success criteria: pipeline runs end-to-end, dashboard works)*
+- Driver-to-driver comparison (lap time, tyre degradation, telemetry trace overlay).
+  *(Phase 2)*
+- Baselines across all drivers: average lap time, fastest lap, consistency score (lap time
+  std dev), linear lap-time degradation slope per tyre stint. *(Phase 2)*
+- Anomaly detection: per-driver lap-time z-score with a configurable threshold, shown as a
+  dashboard table. *(Phase 2)*
 - pytest coverage for ingestion round-tripping and feature engineering correctness.
+
+**Phase 2 gap**: telemetry traces (speed/throttle/brake) are only cached for the two drivers
+in `src/config.py:COMPARISON_DRIVERS`, so the comparative *telemetry* view is limited to that
+pair rather than any two drivers chosen from the full grid. Lap-time-based comparisons (lap
+trend, degradation, consistency, anomalies) already work for all drivers.
 
 ## Current limitations
 
@@ -150,19 +179,48 @@ pip install -r requirements.txt
   the first lap on a new tyre compound, not genuine equipment issues.
 - The degradation model is a single straight line fit per stint; real wear is often non-linear
   (fast initial drop-off, then a more gradual climb).
-- Telemetry is only cached for the two drivers in `src/config.py:COMPARISON_DRIVERS` (fastest
-  lap each) to keep the parquet files small — extend that list to compare more drivers.
-- No predictive modelling, forecasting, or recommendation logic yet — Phase 1 is deliberately
-  descriptive only, per the Karpathy "dumb baselines first" approach.
+- Telemetry is only cached for the two drivers in `src/config.py:COMPARISON_DRIVERS` (see
+  Phase 2 gap above).
+- No predictive modelling, forecasting, or recommendation logic yet — by design, per the
+  Karpathy "dumb baselines first" approach.
+- No multi-race, multi-season, or multi-year data yet.
 - No LLM/RAG explanation layer yet.
 
 ## Roadmap
 
-- **Phase 2** — Better anomaly detection: condition on stint/lap context, track status, and
-  weather instead of a flat z-score.
-- **Phase 3** — Degradation modelling: non-linear wear curves, per-compound degradation models.
-- **Phase 4** — Predictive forecasting: forecast lap time / degradation forward within a stint.
-- **Phase 5** — Decision support recommendations: pit-window / maintenance-window suggestions
-  derived from the forecasts.
-- **Phase 6** — LLM-based explanation assistant: natural-language, evidence-backed explanations
-  of detected anomalies and degradation trends.
+Each phase is built and verified end-to-end on real data before the next one starts.
+
+- **Phase 1 — Single Driver Exploration** ✅ done. Bahrain GP 2024 Race, one driver: load,
+  explore, visualize, save processed data, verify data quality. *Success criteria met:
+  pipeline runs without errors; basic dashboard works.*
+- **Phase 2 — Race Intelligence** 🚧 mostly done. Bahrain GP 2024 Race, all drivers: driver
+  comparison, tyre degradation analysis, consistency metrics, simple anomaly detection.
+  *Success criteria met: dashboard supports driver selection; comparative analysis available
+  (lap-time based). Remaining: extend cached telemetry traces beyond the current 2-driver
+  pair so any two drivers can be compared on speed/throttle/brake, not just lap time.*
+- **Phase 3 — Seasonal Monitoring** ⏳ planned. Entire 2024 season: driver trends, team trends,
+  performance evolution, telemetry aggregation. Industrial analogy: monitoring multiple assets
+  over time. Success criteria: season-wide KPIs, asset health indicators.
+- **Phase 4 — Multi-Year Fleet Monitoring** ⏳ planned. Bahrain GP 2020–2025: compare operating
+  behaviour across years, detect long-term performance shifts, measure degradation patterns,
+  build a benchmarking framework. Industrial analogy: fleet surveillance across multiple wells,
+  ESPs, turbines, or compressors. Success criteria: multi-year comparisons, benchmarking
+  dashboard.
+- **Phase 5 — Predictive Analytics** ⏳ planned. Forecast lap times and degradation, estimate
+  performance decline, generate risk scores. Models: linear baseline, Random Forest, XGBoost.
+  Success criteria: benchmark predictive performance, explain model outputs.
+- **Phase 6 — Operational Intelligence Assistant** ⏳ planned. Add RAG, telemetry explanations,
+  and the ability to answer operational questions (e.g. *"Why did Driver X lose performance
+  after lap 32?"*). The assistant must retrieve telemetry evidence before generating an answer.
+  Success criteria: evidence-backed explanations, no hallucinated conclusions.
+
+## Architecture rule
+
+At every phase:
+
+1. Build the simplest version first.
+2. Visualize before modelling.
+3. Use baseline methods before advanced ML.
+4. Validate results against domain knowledge.
+5. Do not introduce complexity unless the current phase is working.
+6. Keep all code production-quality and portfolio-ready.
