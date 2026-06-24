@@ -60,8 +60,13 @@ def get_telemetry_df(
 ) -> pd.DataFrame:
     """Telemetry for each driver's fastest lap, tagged with Driver and LapNumber.
 
-    Defaults to every driver in the session so any pair can be compared in the
-    dashboard, not just the COMPARISON_DRIVERS default selection.
+    Uses get_telemetry() (car + position data merged) rather than just
+    get_car_data(), so the same cached telemetry covers both the speed/
+    throttle/brake dashboard traces (Phase 1-2) and the X/Y track replay
+    (Arcade replay), without a second download.
+
+    Defaults to every driver in the session so any pair can be compared in
+    the dashboard, not just the COMPARISON_DRIVERS default selection.
     """
     if drivers is None:
         drivers = sorted(session.laps["Driver"].unique())
@@ -72,7 +77,7 @@ def get_telemetry_df(
         if driver_laps.empty:
             continue
         fastest_lap = driver_laps.pick_fastest()
-        telemetry = fastest_lap.get_car_data().add_distance()
+        telemetry = fastest_lap.get_telemetry()
         telemetry["Driver"] = driver
         telemetry["LapNumber"] = fastest_lap["LapNumber"]
         frames.append(telemetry)

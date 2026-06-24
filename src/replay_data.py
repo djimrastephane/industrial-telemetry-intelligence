@@ -1,0 +1,120 @@
+"""Pure data/geometry helpers for the Arcade track replay.
+
+Kept separate from the Arcade window itself so the interpolation and
+coordinate-scaling logic can be unit tested without an actual display -
+the same "test before complexity" split used elsewhere in this project.
+"""
+
+import numpy as np
+import pandas as pd
+
+
+def load_driver_lap_telemetry(telemetry_df: pd.DataFrame, driver: str) -> pd.DataFrame:
+    """Telemetry for one driver's cached fastest lap, sorted by time."""
+    lap = telemetry_df[telemetry_df["Driver"] == driver].copy()
+    lap = lap.dropna(subset=["X", "Y"]).sort_values("Time").reset_index(drop=True)
+    lap["ElapsedSeconds"] = lap["Time"].dt.total_seconds()
+    return lap
+
+
+def track_bounds(lap_df: pd.DataFrame) -> tuple[float, float, float, float]:
+    """(min_x, max_x, min_y, max_y) of the track outline for this lap."""
+    return (
+        lap_df["X"].min(),
+        lap_df["X"].max(),
+        lap_df["Y"].min(),
+        lap_df["Y"].max(),
+    )
+
+
+def scale_to_screen(
+    x: float,
+    y: float,
+    bounds: tuple[float, float, float, float],
+    screen_width: int,
+    screen_height: int,
+    margin: int = 60,
+) -> tuple[float, float]:
+    """Map a telemetry (X, Y) point into screen-pixel coordinates, preserving
+    aspect ratio so the track shape isn't distorted."""
+    min_x, max_x, min_y, max_y = bounds
+    track_width = max(max_x - min_x, 1.0)
+    track_height = max(max_y - min_y, 1.0)
+
+    available_width = screen_width - 2 * margin
+    available_height = screen_height - 2 * margin
+    scale = min(available_width / track_width, available_height / track_height)
+
+    screen_x = margin + (x - min_x) * scale
+    screen_y = margin + (y - min_y) * scale
+    return screen_x, screen_y
+
+
+def compute_track_edges(
+    points: list[tuple[float, float]],
+    half_width: float,
+) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+    """Two parallel boundary lines offset `half_width` either side of the centerline.
+
+    FastF1 doesn't give real track width, so this is a fixed-width visual
+    stand-in: at each point, offset perpendicular to the local direction of
+    travel (estimated from the neighbouring points).
+    """
+    n = len(points)
+    if n == 0:
+        return [], []
+
+    left_edge: list[tuple[float, float]] = []
+    right_edge: list[tuple[float, float]] = []
+    for i in range(n):
+        prev_point = points[i - 1] if i > 0 else points[i]
+        next_point = points[i + 1] if i < n - 1 else points[i]
+        dx = next_point[0] - prev_point[0]
+        dy = next_point[1] - prev_point[1]
+        length = (dx**2 + dy**2) ** 0.5 or 1.0
+        normal_x, normal_y = -dy / length, dx / length
+
+        x, y = points[i]
+        left_edge.append((x + normal_x * half_width, y + normal_y * half_width))
+        right_edge.append((x - normal_x * half_width, y - normal_y * half_width))
+
+    return left_edge, right_edge
+
+
+def checker_line_segments(
+    point_a: tuple[float, float],
+    point_b: tuple[float, float],
+    num_segments: int = 6,
+) -> list[tuple[tuple[float, float], tuple[float, float], bool]]:
+    """Split the line from `point_a` to `point_b` into equal sub-segments for a
+    checkered start/finish line, each tagged True (black) / False (white)."""
+    segments = []
+    for i in range(num_segments):
+        t0 = i / num_segments
+        t1 = (i + 1) / num_segments
+        start = (point_a[0] + (point_b[0] - point_a[0]) * t0, point_a[1] + (point_b[1] - point_a[1]) * t0)
+        end = (point_a[0] + (point_b[0] - point_a[0]) * t1, point_a[1] + (point_b[1] - point_a[1]) * t1)
+        segments.append((start, end, i % 2 == 0))
+    return segments
+
+
+def get_frame_at_time(lap_df: pd.DataFrame, elapsed_seconds: float) -> dict:
+    """Nearest telemetry sample at or before `elapsed_seconds` (clamped to the
+    lap's start/end), as a plain dict for the Arcade window to draw."""
+    clamped = min(max(elapsed_seconds, lap_df["ElapsedSeconds"].iloc[0]), lap_df["ElapsedSeconds"].iloc[-1])
+    idx = np.searchsorted(lap_df["ElapsedSeconds"].to_numpy(), clamped, side="right") - 1
+    idx = min(max(idx, 0), len(lap_df) - 1)
+    row = lap_df.iloc[idx]
+    return {
+        "X": float(row["X"]),
+        "Y": float(row["Y"]),
+        "Speed": float(row["Speed"]),
+        "Throttle": float(row["Throttle"]),
+        "Brake": bool(row["Brake"]),
+        "Gear": int(row["nGear"]),
+        "ElapsedSeconds": float(row["ElapsedSeconds"]),
+    }
+
+
+def lap_duration_seconds(lap_df: pd.DataFrame) -> float:
+    return float(lap_df["ElapsedSeconds"].iloc[-1] - lap_df["ElapsedSeconds"].iloc[0])
