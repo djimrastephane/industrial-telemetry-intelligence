@@ -209,6 +209,26 @@ def test_generate_context_summary_low_speed_explained_by_tyre_degradation():
     assert "tyre degradation" in summary["interpretation"][-1].lower()
 
 
+def test_generate_context_summary_low_speed_explained_by_pit_out_lap():
+    # Real validation case: BOT lap 13 of the 2024 Bahrain race - a pit
+    # out-lap on a fresh tyre (TyreLife=1, below the degradation threshold)
+    # on a Green track. Before the PitThisLap rule existed, this fell
+    # through to "Low confidence: anomaly", which was wrong - it's a known,
+    # direct cause, not an unexplained anomaly.
+    summary = generate_context_summary(
+        {"TrackStatus": "Green", "TyreLife": 1, "PitThisLap": True}, {}, OBSERVED_LOW_SPEED
+    )
+    assert summary["confidence"] == "High"
+    assert "pit stop" in summary["interpretation"][-1].lower()
+
+
+def test_generate_context_summary_pit_out_lap_takes_priority_over_anomaly():
+    # Without the PitThisLap flag, the same low tyre life + Green track is
+    # correctly read as an unexplained anomaly instead.
+    summary = generate_context_summary({"TrackStatus": "Green", "TyreLife": 1}, {}, OBSERVED_LOW_SPEED)
+    assert summary["confidence"] == "Low"
+
+
 def test_generate_context_summary_laptime_increase_explained_by_vsc():
     summary = generate_context_summary(
         {"TrackStatus": "Virtual Safety Car"}, {}, OBSERVED_LAPTIME_INCREASE

@@ -563,13 +563,27 @@ Arcade replay all cover the full grid. `src/config.py:COMPARISON_DRIVERS` only s
   weather reading, or the previous and current actual lap's tyre state) rather than two
   interpolated values a fraction of a second apart - this is what keeps the arrows from
   flickering on interpolation noise between sparse weather samples (~1/minute). *(Phase 9)*
-- Three deterministic, context-only explanation rules, validated against the spec's own
-  examples: a significant track status (Yellow/SC/VSC/Red Flag) always explains a lap-time
-  increase ("Performance reduction expected due to track conditions"); high tyre age
+- Four deterministic, context-only explanation rules, in priority order: a significant track
+  status (Yellow/SC/VSC/Red Flag) explains a lap-time increase ("Performance reduction expected
+  due to track conditions"); a pit out-lap (`PitThisLap`) explains lower-than-expected speed
+  ("Lap follows a pit stop onto a fresh tyre..."); high tyre age
   (`>= src/config.py:CONTEXT_TYRE_LIFE_HIGH_THRESHOLD`, default 15 laps) on a green track
-  explains lower-than-expected speed ("Observed behaviour is consistent with tyre
-  degradation"); low tyre age on a green track with an unexplained speed anomaly produces a Low
-  confidence "Potential performance anomaly requiring further investigation" instead. *(Phase 9)*
+  explains it via tyre degradation instead; with none of those present on a green track, it's
+  reported as a Low-confidence unexplained anomaly. *(Phase 9)*
+- **Validated against a real example, and a real gap found and fixed in the process**: every
+  z-score-flagged anomaly in the 2024 Bahrain race (`anomaly_detection.get_anomaly_table()`) is
+  a pit out-lap on a fresh tyre (`TyreLife == 1`) - e.g. BOT lap 13, the same lap Phase 6's
+  assistant already explains by citing the pit stop. Before the `PitThisLap` rule above existed,
+  asking the context engine "why was BOT's speed lower than expected on lap 13?" produced a Low-
+  confidence "potential anomaly" - wrong, since `get_context_at_timestamp()` already had
+  `PitThisLap: True` and a `TyreLife` reset in its own output; that fact just wasn't wired into
+  `generate_context_summary()`'s rules yet. Re-running the same query after adding the rule now
+  correctly returns "Lap follows a pit stop onto a fresh tyre..." at High confidence. This is the
+  Phase 9 analogue of Phase 5's "report the honest result, even when it's a gap" rule: the fix is
+  documented above and as `test_generate_context_summary_low_speed_explained_by_pit_out_lap()`/
+  `test_generate_context_summary_pit_out_lap_takes_priority_over_anomaly()` in
+  `tests/test_context_engine.py`, rather than silently patched without a record of what was wrong.
+  *(Phase 9)*
 - An "Operational Context" dashboard tab: a driver/lap selector, the context card (tyre, track
   status, air/track temp, recent event), context trends (current/previous/trend arrow for track
   temperature, wind speed, tyre life), and an interactive "what did telemetry show?" selector
@@ -579,10 +593,11 @@ Arcade replay all cover the full grid. `src/config.py:COMPARISON_DRIVERS` only s
   readout (tyre, track status, air/track temp) for the focus driver, updated every frame by
   converting the replay's lap-relative clock back to absolute session time via that lap's
   `LapStartTimeSeconds` offset. *(Phase 9)*
-- 24 new tests for `context_engine.py` (alignment, interpolation, track-status/tyre-change/
-  race-control-event detection, missing-value handling, and the three example
-  explanation/confidence scenarios from the spec), plus 2 new ingestion tests for the optional
-  race-control argument to `save_processed()`; 109 tests total. *(Phase 9)*
+- 26 new tests for `context_engine.py` (alignment, interpolation, track-status/tyre-change/
+  race-control-event detection, missing-value handling, the three example
+  explanation/confidence scenarios from the spec, and the pit-out-lap regression above), plus 2
+  new ingestion tests for the optional race-control argument to `save_processed()`; 111 tests
+  total. *(Phase 9)*
 
 ## Current limitations
 
@@ -673,10 +688,11 @@ Arcade replay all cover the full grid. `src/config.py:COMPARISON_DRIVERS` only s
   project's "don't invent data-fitted thresholds" rule, but they mean a "moderate" track
   temperature change at a hot track (e.g. Bahrain) might be unremarkable at a cooler one.
 - The `generate_context_summary()` explanation cascade is intentionally small and ordered
-  (significant track status, then high tyre age, then "no obvious explanation"): it covers the
-  three scenarios in the Phase 9 spec, but a telemetry effect with multiple plausible competing
-  explanations (e.g. a track-temperature spike *and* high tyre age at the same moment) only
-  reports the first rule in that order, not a ranked list of all contributing factors.
+  (significant track status, then pit out-lap, then high tyre age, then "no obvious
+  explanation"): it covers every anomaly actually found in this race plus the spec's worked
+  examples, but a telemetry effect with multiple plausible competing explanations (e.g. a
+  track-temperature spike *and* high tyre age at the same moment) only reports the first rule in
+  that order, not a ranked list of all contributing factors.
 - Race control message matching uses a fixed lookback window
   (`CONTEXT_RECENT_EVENT_WINDOW_SECONDS`, default 120s) and returns at most one (the most
   recent) message - a driver's "Recent Event" can miss an earlier, possibly more relevant

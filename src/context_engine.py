@@ -110,6 +110,9 @@ INTERPRETATION_RULES = {
 }
 
 TRACK_CONDITION_EXPLANATION = "Performance reduction expected due to track conditions."
+PIT_OUT_LAP_EXPLANATION = (
+    "Lap follows a pit stop onto a fresh tyre. Out-lap pace is not representative of normal performance."
+)
 TYRE_DEGRADATION_EXPLANATION = "Observed behaviour is consistent with tyre degradation."
 ANOMALY_EXPLANATION = "Potential performance anomaly requiring further investigation."
 PARTIAL_EXPLANATION = "Context partially explains observed change."
@@ -427,6 +430,16 @@ def generate_context_summary(
             confidence = "High"
             if TRACK_CONDITION_EXPLANATION not in " ".join(sentences):
                 sentences.append(TRACK_CONDITION_EXPLANATION)
+        elif observed_effect in (OBSERVED_LOW_SPEED, OBSERVED_SPEED_ANOMALY) and context_now.get("PitThisLap"):
+            # A pit out-lap on a cold, fresh tyre is a known, direct cause of a
+            # slow lap - distinct from gradual tyre wear (TyreLife threshold
+            # below), which is why this check comes first. Found via a real
+            # validation pass (BOT lap 13 of the 2024 Bahrain race, the same
+            # lap Phase 6's assistant explains) before this rule existed: the
+            # engine fell through to "Low confidence: anomaly" for a lap that
+            # was fully explained by the pit stop it already had context for.
+            confidence = "High"
+            sentences.append(PIT_OUT_LAP_EXPLANATION)
         elif observed_effect in (OBSERVED_LOW_SPEED, OBSERVED_SPEED_ANOMALY) and (
             tyre_life is not None and pd.notna(tyre_life) and tyre_life >= config.CONTEXT_TYRE_LIFE_HIGH_THRESHOLD
         ):
