@@ -79,3 +79,32 @@ def plot_driver_comparison(telemetry_df: pd.DataFrame, driver_a: str, driver_b: 
         labels={"Distance": "Distance (m)", "Speed": "Speed (km/h)"},
     )
     return fig
+
+
+def plot_position_trend(position_df: pd.DataFrame, entity_col: str) -> go.Figure:
+    """Finishing position across the season. Lower is better, so the y-axis
+    is inverted (1st place at the top), matching how standings are read."""
+    fig = px.line(
+        position_df,
+        x="RoundNumber",
+        y="FinishPosition",
+        color=entity_col,
+        markers=True,
+        title=f"Season Finishing Position Trend by {entity_col}",
+        labels={"RoundNumber": "Round", "FinishPosition": "Finishing Position"},
+    )
+    fig.update_yaxes(autorange="reversed")
+    return fig
+
+
+def plot_speed_trap_trend(speed_df: pd.DataFrame) -> go.Figure:
+    fig = px.line(
+        speed_df,
+        x="RoundNumber",
+        y="AvgSpeedTrap",
+        color="Driver",
+        markers=True,
+        title="Season Speed Trap Trend by Driver",
+        labels={"RoundNumber": "Round", "AvgSpeedTrap": "Avg Speed Trap (km/h)"},
+    )
+    return fig

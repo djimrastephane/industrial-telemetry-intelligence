@@ -82,9 +82,10 @@ industrial-telemetry-intelligence/
     baseline_models.py      # avg lap time, fastest lap, consistency, degradation
     anomaly_detection.py    # per-driver z-score anomaly flag
     degradation_analysis.py # linear lap-time slope per tyre stint
+    seasonal_analysis.py    # season-wide position/speed trends and KPIs
     visualisation.py        # shared Plotly figures
   app/
-    streamlit_app.py        # Phase 1 dashboard
+    streamlit_app.py        # dashboard: Race Detail + Season Monitoring tabs
   notebooks/
     01_data_exploration.ipynb
     02_baseline_analysis.ipynb
@@ -92,6 +93,7 @@ industrial-telemetry-intelligence/
   tests/
     test_data_ingestion.py
     test_feature_engineering.py
+    test_seasonal_analysis.py
   data/                     # raw/processed/cache - gitignored, regenerated locally
   outputs/                  # figures/reports - gitignored, regenerated locally
 ```
@@ -128,16 +130,29 @@ pip install -r requirements.txt
    python -m src.anomaly_detection
    ```
 
-3. **Run the dashboard**:
+3. **Download and cache the full season** (2024, all 24 race rounds). This loops over every
+   round in `src/config.py:SEASON_ROUNDS`, skipping (with a warning) any round that fails to
+   load rather than aborting the whole batch. It can take several minutes the first time.
+
+   ```bash
+   python -m src.data_ingestion season
+   ```
+
+   This writes `data/processed/season_laps.parquet`.
+
+4. **Run the dashboard**:
 
    ```bash
    streamlit run app/streamlit_app.py
    ```
 
-4. **Run the notebooks** (`notebooks/01_data_exploration.ipynb`, `02_baseline_analysis.ipynb`,
+   The dashboard has two tabs: **Race Detail** (Phase 1-2, needs step 1's data) and
+   **Season Monitoring** (Phase 3, needs step 3's data).
+
+5. **Run the notebooks** (`notebooks/01_data_exploration.ipynb`, `02_baseline_analysis.ipynb`,
    `03_anomaly_detection.ipynb`) for the same analysis in a more exploratory format.
 
-5. **Run tests**:
+6. **Run tests**:
 
    ```bash
    pytest tests/ -v
@@ -146,10 +161,10 @@ pip install -r requirements.txt
    Tests use synthetic fixtures and a temp directory — they never overwrite the real
    downloaded data in `data/processed/`.
 
-## Status: Phase 1 and Phase 2 done
+## Status: Phases 1-3 done
 
-Dataset so far: 2024 Bahrain Grand Prix, Race session, all 20 drivers' lap/weather/telemetry
-data.
+Dataset so far: 2024 Bahrain Grand Prix Race session (all 20 drivers' lap/weather/telemetry
+data) plus the full 2024 season (all 24 race rounds, ~26,600 laps).
 
 - End-to-end ingestion of real FastF1 data (laps, weather, telemetry, tyre compound/life,
   sector times), cached locally as parquet. *(Phase 1)*
@@ -165,11 +180,21 @@ data.
   std dev), linear lap-time degradation slope per tyre stint. *(Phase 2)*
 - Anomaly detection: per-driver lap-time z-score with a configurable threshold, shown as a
   dashboard table. *(Phase 2)*
-- pytest coverage for ingestion round-tripping and feature engineering correctness.
+- Season-wide ingestion across all 24 2024 race rounds, kept lean by extracting only
+  `LapTime`, running `Position` (finishing-position proxy), and `SpeedST` (speed-trap
+  telemetry-aggregate proxy) per lap instead of full per-race car telemetry. *(Phase 3)*
+- Driver and team finishing-position trends across the season, plus a speed-trap trend per
+  driver. *(Phase 3)*
+- Season KPIs and an asset-health indicator (`PositionTrendSlope`, the season-long analogue
+  of the within-stint degradation slope) per driver and per team. *(Phase 3)*
+- A "Season Monitoring" dashboard tab with driver multiselect, position/speed trend charts,
+  and KPI tables. *(Phase 3 success criteria: season-wide KPIs, asset health indicators)*
+- pytest coverage for ingestion round-tripping, feature engineering, and seasonal analysis.
 
-Fastest-lap telemetry (speed/throttle/brake) is cached for every driver in the session, so
-the dashboard's driver selector and telemetry comparison both cover the full grid.
-`src/config.py:COMPARISON_DRIVERS` only sets the *default pre-selected pair* shown on load.
+Fastest-lap telemetry (speed/throttle/brake) is cached for every driver in the Bahrain race
+session, so the Race Detail tab's driver selector and telemetry comparison cover the full
+grid. `src/config.py:COMPARISON_DRIVERS` only sets the *default pre-selected pair* shown on
+load.
 
 ## Current limitations
 
@@ -178,9 +203,12 @@ the dashboard's driver selector and telemetry comparison both cover the full gri
   the first lap on a new tyre compound, not genuine equipment issues.
 - The degradation model is a single straight line fit per stint; real wear is often non-linear
   (fast initial drop-off, then a more gradual climb).
+- `FinishPosition` is a proxy (last recorded running position), not the official classified
+  result — it won't reflect post-race penalties or disqualifications.
+- Season-wide anomaly detection isn't built yet — Phase 3 only adds trend KPIs, not flagging.
 - No predictive modelling, forecasting, or recommendation logic yet — by design, per the
   Karpathy "dumb baselines first" approach.
-- No multi-race, multi-season, or multi-year data yet.
+- No multi-year data yet (Phase 4).
 - No LLM/RAG explanation layer yet.
 
 ## Roadmap
@@ -194,9 +222,10 @@ Each phase is built and verified end-to-end on real data before the next one sta
   comparison (lap time and telemetry), tyre degradation analysis, consistency metrics, simple
   anomaly detection. *Success criteria met: dashboard supports driver selection across the
   full grid; comparative analysis available for both lap-time metrics and telemetry traces.*
-- **Phase 3 — Seasonal Monitoring** ⏳ planned. Entire 2024 season: driver trends, team trends,
-  performance evolution, telemetry aggregation. Industrial analogy: monitoring multiple assets
-  over time. Success criteria: season-wide KPIs, asset health indicators.
+- **Phase 3 — Seasonal Monitoring** ✅ done. Entire 2024 season (24 rounds): driver trends,
+  team trends, performance evolution, telemetry aggregation (speed trap). Industrial analogy:
+  monitoring multiple assets over time. *Success criteria met: season-wide KPIs and an
+  asset-health indicator (PositionTrendSlope) per driver and team.*
 - **Phase 4 — Multi-Year Fleet Monitoring** ⏳ planned. Bahrain GP 2020–2025: compare operating
   behaviour across years, detect long-term performance shifts, measure degradation patterns,
   build a benchmarking framework. Industrial analogy: fleet surveillance across multiple wells,
