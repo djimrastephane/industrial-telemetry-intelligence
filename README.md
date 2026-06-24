@@ -61,6 +61,11 @@ parsed driver/lap, the retrieved evidence, and the local LLM's grounded answer.
 
 ![Operational Assistant tab](assets/screenshots/operational_assistant_tab.png)
 
+**Decision Support (Phase 7)** - recommended pit windows derived from the existing degradation
+forecast, sorted by urgency, plus the full recommendations table.
+
+![Decision Support tab](assets/screenshots/decision_support_tab.png)
+
 **Arcade Replay** - standalone "digital control room" window: a car moving around the real
 track shape with a live speed/throttle/brake/gear instrument cluster.
 
@@ -140,10 +145,11 @@ industrial-telemetry-intelligence/
     fleet_analysis.py       # multi-year relative pace, degradation, year-over-year shift
     predictive_models.py    # lap-time forecast (baselines + Linear/RF/XGBoost), risk scores
     operational_assistant.py # Phase 6: parse question -> retrieve evidence -> local LLM
+    decision_support.py     # Phase 7: degradation forecast -> pit/maintenance recommendation
     replay_data.py          # pure geometry/interpolation helpers for the Arcade replay
     visualisation.py        # shared Plotly figures
   app/
-    streamlit_app.py        # dashboard: Race Detail + Season + Fleet + Predictive + Assistant tabs
+    streamlit_app.py        # dashboard: Race Detail + Season + Fleet + Predictive + Assistant + Decision tabs
     arcade_replay.py         # standalone Arcade window: car + live HUD on the track
   notebooks/
     01_data_exploration.ipynb
@@ -157,6 +163,8 @@ industrial-telemetry-intelligence/
     test_replay_data.py
     test_predictive_models.py
     test_operational_assistant.py
+    test_degradation_analysis.py
+    test_decision_support.py
   data/                     # raw/processed/cache - gitignored, regenerated locally
   outputs/                  # figures/reports - gitignored, regenerated locally
 ```
@@ -242,18 +250,26 @@ ollama pull qwen2.5:7b-instruct     # default model (src/config.py:OLLAMA_MODEL)
 
    Prints the retrieved evidence and the local LLM's answer for a grounded example question.
 
-7. **Run the dashboard**:
+7. **Inspect decision support recommendations** (optional, sanity check - uses step 1's data,
+   no new download):
+
+   ```bash
+   python -m src.decision_support
+   ```
+
+8. **Run the dashboard**:
 
    ```bash
    streamlit run app/streamlit_app.py
    ```
 
-   The dashboard has five tabs: **Race Detail** (Phase 1-2, needs step 1's data),
+   The dashboard has six tabs: **Race Detail** (Phase 1-2, needs step 1's data),
    **Season Monitoring** (Phase 3, needs step 3's data), **Fleet Monitoring**
    (Phase 4, needs step 4's data), **Predictive Analytics** (Phase 5, needs step 1's data),
-   and **Operational Assistant** (Phase 6, needs step 1's data and Ollama running).
+   **Operational Assistant** (Phase 6, needs step 1's data and Ollama running), and
+   **Decision Support** (Phase 7, needs step 1's data).
 
-8. **Run the Arcade replay** (separate native window, needs step 1's data):
+9. **Run the Arcade replay** (separate native window, needs step 1's data):
 
    ```bash
    python app/arcade_replay.py --driver VER
@@ -263,10 +279,10 @@ ollama pull qwen2.5:7b-instruct     # default model (src/config.py:OLLAMA_MODEL)
    instrument cluster (speed dial, throttle dial, brake lamp, gear box) above the track and
    a checkered start/finish marker to gauge lap progress.
 
-9. **Run the notebooks** (`notebooks/01_data_exploration.ipynb`, `02_baseline_analysis.ipynb`,
-   `03_anomaly_detection.ipynb`) for the same analysis in a more exploratory format.
+10. **Run the notebooks** (`notebooks/01_data_exploration.ipynb`, `02_baseline_analysis.ipynb`,
+    `03_anomaly_detection.ipynb`) for the same analysis in a more exploratory format.
 
-10. **Run tests**:
+11. **Run tests**:
 
    ```bash
    pytest tests/ -v
@@ -275,7 +291,7 @@ ollama pull qwen2.5:7b-instruct     # default model (src/config.py:OLLAMA_MODEL)
    Tests use synthetic fixtures and a temp directory — they never overwrite the real
    downloaded data in `data/processed/`.
 
-## Status: Phases 1-6 done, plus a v1 operational replay
+## Status: Phases 1-7 done, plus a v1 operational replay
 
 Dataset so far: 2024 Bahrain Grand Prix Race session (all 20 drivers' lap/weather/telemetry
 data), the full 2024 season (all 24 race rounds, ~26,600 laps), and Bahrain Grand Prix every
@@ -380,7 +396,31 @@ year from 2020-2025 (~6,500 laps).
 - pytest coverage for ingestion round-tripping, feature engineering, seasonal analysis, fleet
   analysis, predictive models, the operational assistant (citation validation, speculative-
   language detection, and the LLM call mocked/injected so tests don't require Ollama running),
-  and the replay's geometry/interpolation helpers (68 tests total).
+  and the replay's geometry/interpolation helpers.
+- Decision support recommendations that turn the existing Phase 5 degradation forecast into an
+  action: "Pit now", "Pit within N laps", or "No action needed", by projecting the existing
+  linear degradation fit forward to find when it crosses a configurable threshold
+  (`DECISION_PIT_THRESHOLD_PCT`, default 5%) above that stint's own starting pace. No new model
+  - it reuses `degradation_analysis.degradation_per_stint` and the Phase 5 forecast logic.
+  *(Phase 7)*
+- Validated against real strategy: for several drivers in the 2024 Bahrain race (STR, ZHO,
+  RUS), the model's projected crossing lap lands a few laps *after* their actual pit lap -
+  consistent with teams pitting proactively before a hard performance cliff, not reactively
+  after hitting one. *(Phase 7)*
+- An honestly-surfaced tension: Phase 5's `RiskCategory` (relative to this race's other stints,
+  via tertiles) and Phase 7's `RecommendedAction` (an absolute fixed threshold) answer different
+  questions and can legitimately disagree - e.g. several SOFT stints rank `High` risk relative
+  to their peers while still being many laps from the fixed 5% threshold, so they show "No
+  action needed" anyway. Both are shown side by side in the dashboard rather than reconciled
+  into one number. *(Phase 7)*
+- A "Decision Support" dashboard tab: a bar chart of laps remaining until the recommended pit
+  window (most urgent first), and a filterable full recommendations table. *(Phase 7 success
+  criteria: turn a forecast into an actionable, explainable recommendation)*
+- Fixed a latent bug found while building Phase 7: `degradation_per_stint()` crashed with a
+  `KeyError` if every stint in the input had fewer than 2 laps (an edge case no earlier phase's
+  data happened to trigger) - it now returns a correctly-columned empty DataFrame instead.
+- 80 tests total, including a new dedicated test file for `degradation_analysis.py` (previously
+  only covered indirectly through other modules) added alongside the Phase 7 work.
 
 Fastest-lap telemetry (speed/throttle/brake/X/Y position) is cached for every driver in the
 Bahrain race session, so the Race Detail tab's driver selector, telemetry comparison, and the
@@ -445,8 +485,20 @@ Arcade replay all cover the full grid. `src/config.py:COMPARISON_DRIVERS` only s
   cannot verify that the model paired the right lap with the right *value* (e.g. citing a real
   lap number but misquoting its lap time), since that would require re-parsing the answer's
   prose for numbers and matching them positionally, which isn't implemented yet.
-- No decision-support recommendations (e.g. an actual pit-stop/maintenance call) yet - Phase 6
-  stops at explanation, not action.
+- `DECISION_PIT_THRESHOLD_PCT` (default 5%) is a fixed constant, not derived from the data -
+  simple and transparent, but it means recommendation timing depends on a number chosen in
+  advance rather than something statistically fitted to this race or this tyre compound.
+- The pit-window projection is a straight-line extrapolation of the same per-stint linear fit
+  used in Phase 5, so it inherits the same caveat: real degradation is often non-linear (e.g. a
+  sudden tyre "cliff"), and the recommendation doesn't know about upcoming pit stops, weather
+  changes, or track status.
+- `RiskCategory` (Phase 5, relative to this race) and `RecommendedAction` (Phase 7, an absolute
+  threshold) can disagree, as noted in Status above - the dashboard shows both rather than
+  silently picking one, but there's no reconciliation logic to explain *why* they disagree
+  beyond the text description.
+- Phase 7 recommends a pit *window*, not a pit *lap* tied to strategy (tyre allocation rules,
+  rivals' positions, safety car probability, pit lane time loss) - it's a telemetry-only
+  trigger, not a race-strategy optimizer.
 
 ## Roadmap
 
@@ -485,6 +537,15 @@ Each phase is built and verified end-to-end on real data before the next one sta
   conclusions, checked at the code level via `validate_citations()` and
   `detect_speculative_language()`, not just prompt instructions - though see limitations for
   the remaining gaps in those checks.*
+- **Phase 7 — Decision Support Recommendations** ✅ done. Turns the Phase 5 degradation
+  forecast into an explicit recommendation ("Pit now" / "Pit within N laps" / "No action
+  needed") by projecting the existing linear fit forward to a configurable threshold, rather
+  than adding a new model. Industrial analogy: the step that turns a wear-trend reading into an
+  actual maintenance work order. *Success criteria met: forecasts become actionable,
+  explainable recommendations - validated against real strategy (several drivers' actual pit
+  laps preceded the model's projected threshold-crossing lap, consistent with proactive
+  pitting) and an honestly-surfaced disagreement between Phase 5's relative risk category and
+  Phase 7's absolute threshold, shown side by side rather than papered over.*
 
 ## Architecture rule
 

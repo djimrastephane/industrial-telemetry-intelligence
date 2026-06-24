@@ -35,6 +35,9 @@ def degradation_per_stint(laps_df: pd.DataFrame) -> pd.DataFrame:
             }
         )
 
+    columns = ["Driver", "Stint", "Compound", "Laps", "DegradationSecondsPerLap", "StartingLapTimeEstimate"]
+    if not records:
+        return pd.DataFrame(columns=columns)
     return pd.DataFrame(records).sort_values(["Driver", "Stint"]).reset_index(drop=True)
 
 

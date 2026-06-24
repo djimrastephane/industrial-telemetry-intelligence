@@ -198,3 +198,29 @@ def plot_degradation_forecast(observed_df: pd.DataFrame, forecast_df: pd.DataFra
         yaxis_title="Lap Time (s)",
     )
     return fig
+
+
+def plot_pit_recommendations(recommendations_df: pd.DataFrame) -> go.Figure:
+    """Horizontal bar of laps remaining until the recommended pit/maintenance
+    window, for stints with an actionable ("Pit now" / "Pit within N laps")
+    recommendation only - stable/improving stints have nothing to show here."""
+    actionable = recommendations_df[recommendations_df["RecommendedAction"].str.contains("Pit", na=False)].copy()
+    if actionable.empty:
+        return go.Figure().update_layout(title="No actionable pit recommendations right now")
+
+    actionable["LapsUntilAction"] = (
+        actionable["ProjectedCrossingStintLap"] - actionable["CurrentStintLap"]
+    ).clip(lower=0)
+    actionable["Label"] = actionable["Driver"] + " (stint " + actionable["Stint"].astype(int).astype(str) + ")"
+    actionable = actionable.sort_values("LapsUntilAction")
+
+    fig = px.bar(
+        actionable,
+        x="LapsUntilAction",
+        y="Label",
+        color="RiskCategory",
+        orientation="h",
+        title="Recommended Pit Window (laps until action, most urgent first)",
+        labels={"LapsUntilAction": "Laps Until Recommended Pit", "Label": "Driver / Stint"},
+    )
+    return fig

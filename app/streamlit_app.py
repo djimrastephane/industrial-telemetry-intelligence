@@ -20,6 +20,7 @@ from src.baseline_models import (
     fastest_lap_per_driver,
 )
 from src.data_cleaning import load_and_clean_all, load_and_clean_fleet, load_and_clean_season
+from src.decision_support import build_recommendations_table
 from src.fleet_analysis import (
     degradation_by_year,
     field_average_gap_by_year,
@@ -48,6 +49,7 @@ from src.visualisation import (
     plot_lap_times,
     plot_model_comparison,
     plot_pace_gap_trend,
+    plot_pit_recommendations,
     plot_position_trend,
     plot_predicted_vs_actual,
     plot_speed_trace,
@@ -71,11 +73,11 @@ st.markdown(
     """
 )
 
-race_tab, season_tab, fleet_tab, predictive_tab, assistant_tab = st.tabs(
+race_tab, season_tab, fleet_tab, predictive_tab, assistant_tab, decision_tab = st.tabs(
     [
         "Race Detail (Phase 1-2)", "Season Monitoring (Phase 3)",
         "Fleet Monitoring (Phase 4)", "Predictive Analytics (Phase 5)",
-        "Operational Assistant (Phase 6)",
+        "Operational Assistant (Phase 6)", "Decision Support (Phase 7)",
     ]
 )
 
@@ -573,5 +575,72 @@ with assistant_tab:
         - **Local LLM = confidentiality.** Running against Ollama instead of a hosted API is the
           same architecture you'd need for real, proprietary ESP/SCADA data that can't leave the
           plant network.
+        """
+    )
+
+with decision_tab:
+    st.subheader("Data Loading Status")
+
+    required_files = [config.LAPS_FILE, config.WEATHER_FILE, config.TELEMETRY_FILE]
+    missing = [f for f in required_files if not f.exists()]
+    if missing:
+        st.error(
+            "Processed data not found. Run `python -m src.data_ingestion` first to download "
+            f"and cache the {config.SEASON_YEAR} {config.EVENT_NAME} ({config.SESSION_NAME}) session."
+        )
+        st.stop()
+
+    decision_laps_df, _, _ = load_and_clean_all()
+    st.success(
+        f"Using {config.SEASON_YEAR} {config.EVENT_NAME} (single race): "
+        f"{decision_laps_df['Driver'].nunique()} drivers, {len(decision_laps_df)} laps."
+    )
+    st.write(
+        f"A pit/maintenance window is recommended once the existing degradation forecast "
+        f"(Phase 5) projects lap time crossing **{config.DECISION_PIT_THRESHOLD_PCT}% above "
+        f"this stint's own starting pace**, within the next {config.DECISION_MAX_HORIZON_LAPS} "
+        "laps. This reuses the same linear fit as the Predictive Analytics tab - it doesn't "
+        "add a new model, it turns the existing forecast into a decision."
+    )
+
+    recommendations_table = build_recommendations_table(decision_laps_df)
+
+    st.divider()
+    st.subheader("Recommended Pit Windows")
+    st.plotly_chart(plot_pit_recommendations(recommendations_table), width="stretch")
+
+    st.divider()
+    st.subheader("All Recommendations")
+    st.write(
+        "RiskCategory (Phase 5, relative to this race's other stints) and RecommendedAction "
+        "(Phase 7, an absolute threshold) answer different questions and can legitimately "
+        "disagree - e.g. a stint can rank High risk relative to its peers while still being "
+        "many laps from this fixed threshold."
+    )
+    decision_drivers = sorted(recommendations_table["Driver"].unique()) if not recommendations_table.empty else []
+    selected_decision_drivers = st.multiselect("Filter by driver", decision_drivers, default=decision_drivers)
+    if selected_decision_drivers:
+        st.dataframe(
+            recommendations_table[recommendations_table["Driver"].isin(selected_decision_drivers)],
+            width="stretch",
+        )
+    else:
+        st.dataframe(recommendations_table, width="stretch")
+
+    st.divider()
+    st.subheader("From Forecast to Recommendation")
+    st.markdown(
+        """
+        - **A forecast becomes a decision once it crosses a threshold.** Phase 5 already forecasts
+          how lap time will evolve; Phase 7 adds the one extra step of saying *when that forecast
+          implies an action is needed* - the same step that turns a vibration trend into a
+          maintenance work order.
+        - **The threshold is a configurable constant, not derived from the data** (see
+          `src/config.py:DECISION_PIT_THRESHOLD_PCT`) - simple and transparent, but it means the
+          recommendation timing depends on a number chosen in advance, not statistically fitted.
+        - **Validated against real strategy**: for several drivers (e.g. STR, ZHO, RUS in the
+          2024 Bahrain race), the model's projected crossing lap lands a few laps after their
+          actual pit lap - consistent with teams pitting proactively before a hard performance
+          cliff, not reactively after one.
         """
     )

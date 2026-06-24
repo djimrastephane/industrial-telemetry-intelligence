@@ -47,3 +47,10 @@ FLEET_LAPS_FILE = PROCESSED_DIR / "fleet_laps.parquet"
 OLLAMA_BASE_URL = "http://localhost:11434"
 OLLAMA_MODEL = "qwen2.5:7b-instruct"
 ASSISTANT_EVIDENCE_WINDOW = 5  # laps either side of the lap in question
+
+# Phase 7: decision support. A pit/maintenance window is recommended once the
+# linear degradation forecast projects lap time crossing this far above the
+# stint's own starting pace (a fixed % threshold, like ANOMALY_ZSCORE_THRESHOLD
+# above - simple and configurable, not derived from the data; see README limitations).
+DECISION_PIT_THRESHOLD_PCT = 5.0
+DECISION_MAX_HORIZON_LAPS = 10
