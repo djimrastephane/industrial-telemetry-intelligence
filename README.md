@@ -1,5 +1,6 @@
 # Industrial Telemetry Intelligence
 
+[![CI](https://github.com/djimrastephane/industrial-telemetry-intelligence/actions/workflows/ci.yml/badge.svg)](https://github.com/djimrastephane/industrial-telemetry-intelligence/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 An **Industrial Asset Monitoring and Decision Support System**, prototyped end-to-end on
