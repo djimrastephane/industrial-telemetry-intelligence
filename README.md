@@ -29,6 +29,11 @@ multiple years, with a benchmarking table and year-over-year `Shift` labels.
 
 ![Fleet Monitoring tab](assets/screenshots/fleet_monitoring_tab.png)
 
+**Predictive Analytics (Phase 5)** - lap-time forecast model comparison, predicted-vs-actual
+view, feature importances, an interactive degradation forecast, and risk scores.
+
+![Predictive Analytics tab](assets/screenshots/predictive_analytics_tab.png)
+
 **Arcade Replay** - standalone "digital control room" window: a car moving around the real
 track shape with a live speed/throttle/brake/gear instrument cluster.
 
@@ -106,10 +111,11 @@ industrial-telemetry-intelligence/
     degradation_analysis.py # linear lap-time slope per tyre stint
     seasonal_analysis.py    # season-wide position/speed trends and KPIs
     fleet_analysis.py       # multi-year relative pace, degradation, year-over-year shift
+    predictive_models.py    # lap-time forecast (baselines + Linear/RF/XGBoost), risk scores
     replay_data.py          # pure geometry/interpolation helpers for the Arcade replay
     visualisation.py        # shared Plotly figures
   app/
-    streamlit_app.py        # dashboard: Race Detail + Season + Fleet Monitoring tabs
+    streamlit_app.py        # dashboard: Race Detail + Season + Fleet + Predictive tabs
     arcade_replay.py         # standalone Arcade window: car + live HUD on the track
   notebooks/
     01_data_exploration.ipynb
@@ -121,6 +127,7 @@ industrial-telemetry-intelligence/
     test_seasonal_analysis.py
     test_fleet_analysis.py
     test_replay_data.py
+    test_predictive_models.py
   data/                     # raw/processed/cache - gitignored, regenerated locally
   outputs/                  # figures/reports - gitignored, regenerated locally
 ```
@@ -133,6 +140,12 @@ Requires Python 3.10+.
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
+
+On macOS, `xgboost` (used in Phase 5) needs the OpenMP runtime, which isn't bundled:
+
+```bash
+brew install libomp
 ```
 
 ## Running the pipeline
@@ -177,17 +190,24 @@ pip install -r requirements.txt
 
    This writes `data/processed/fleet_laps.parquet`.
 
-5. **Run the dashboard**:
+5. **Inspect predictive models** (optional, sanity check - uses step 1's data, no new
+   download):
+
+   ```bash
+   python -m src.predictive_models
+   ```
+
+6. **Run the dashboard**:
 
    ```bash
    streamlit run app/streamlit_app.py
    ```
 
-   The dashboard has three tabs: **Race Detail** (Phase 1-2, needs step 1's data),
-   **Season Monitoring** (Phase 3, needs step 3's data), and **Fleet Monitoring**
-   (Phase 4, needs step 4's data).
+   The dashboard has four tabs: **Race Detail** (Phase 1-2, needs step 1's data),
+   **Season Monitoring** (Phase 3, needs step 3's data), **Fleet Monitoring**
+   (Phase 4, needs step 4's data), and **Predictive Analytics** (Phase 5, needs step 1's data).
 
-6. **Run the Arcade replay** (separate native window, needs step 1's data):
+7. **Run the Arcade replay** (separate native window, needs step 1's data):
 
    ```bash
    python app/arcade_replay.py --driver VER
@@ -197,10 +217,10 @@ pip install -r requirements.txt
    instrument cluster (speed dial, throttle dial, brake lamp, gear box) above the track and
    a checkered start/finish marker to gauge lap progress.
 
-7. **Run the notebooks** (`notebooks/01_data_exploration.ipynb`, `02_baseline_analysis.ipynb`,
+8. **Run the notebooks** (`notebooks/01_data_exploration.ipynb`, `02_baseline_analysis.ipynb`,
    `03_anomaly_detection.ipynb`) for the same analysis in a more exploratory format.
 
-8. **Run tests**:
+9. **Run tests**:
 
    ```bash
    pytest tests/ -v
@@ -209,7 +229,7 @@ pip install -r requirements.txt
    Tests use synthetic fixtures and a temp directory — they never overwrite the real
    downloaded data in `data/processed/`.
 
-## Status: Phases 1-4 done, plus a v1 operational replay
+## Status: Phases 1-5 done, plus a v1 operational replay
 
 Dataset so far: 2024 Bahrain Grand Prix Race session (all 20 drivers' lap/weather/telemetry
 data), the full 2024 season (all 24 race rounds, ~26,600 laps), and Bahrain Grand Prix every
@@ -262,8 +282,30 @@ year from 2020-2025 (~6,500 laps).
   dial, brake lamp, gear box) - the same layout as an operator's single-asset monitoring
   screen. Pure geometry/interpolation logic (including the gauge-needle angle math) lives in
   `replay_data.py` so it's unit-tested without needing a display.
+- Lap-time forecasting (Phase 5 v1, single race, pooled across all drivers, no driver-identity
+  feature): lag-only features (`PrevLapTimeSeconds`, `Rolling3PrevLapTimeSeconds`, computed
+  without peeking at the lap being predicted) feed two honest baselines (naive lag-1, mean) and
+  three trained models (Linear Regression, Random Forest, XGBoost), all evaluated on the same
+  chronological train/test split (test laps happen later in the race than anything trained on).
+  **Actual result on this race: the naive lag-1 baseline (MAE 0.43s) beats every trained model**
+  (Random Forest MAE 0.53s, XGBoost 0.57s, Linear Regression 1.98s) - lap-to-lap correlation is
+  high enough that "next lap ≈ last lap" is a genuinely hard baseline to beat at a 1-lap-ahead
+  horizon. This is reported as-is rather than tuned away, per the project's "don't fabricate
+  results" rule. *(Phase 5)*
+- Model explainability: Linear Regression coefficients and Random Forest feature importances,
+  both surfaced in the dashboard. *(Phase 5 success criteria: explain model outputs)*
+- Degradation forecasting: extrapolates the existing within-stint linear degradation fit
+  forward by a configurable number of laps - a deliberately simple first-order estimate, not a
+  precise prediction (see limitations). *(Phase 5)*
+- Degradation risk scores: projected lap-time increase over the next few laps per driver/stint,
+  with Low/Medium/High categories assigned from this race's own distribution (tertiles) rather
+  than a fixed constant. *(Phase 5)*
+- A "Predictive Analytics" dashboard tab with the model comparison table/chart, a
+  predicted-vs-actual view per model, feature-importance charts, an interactive degradation
+  forecast (driver/stint/laps-ahead selectors), and the risk-score table. *(Phase 5 success
+  criteria: benchmark predictive performance, explain model outputs)*
 - pytest coverage for ingestion round-tripping, feature engineering, seasonal analysis, fleet
-  analysis, and the replay's geometry/interpolation helpers (38 tests total).
+  analysis, predictive models, and the replay's geometry/interpolation helpers (51 tests total).
 
 Fastest-lap telemetry (speed/throttle/brake/X/Y position) is cached for every driver in the
 Bahrain race session, so the Race Detail tab's driver selector, telemetry comparison, and the
@@ -298,8 +340,20 @@ Arcade replay all cover the full grid. `src/config.py:COMPARISON_DRIVERS` only s
   time, since that requires timing-loop data beyond the per-lap summary.
 - The Arcade replay's track width is a fixed visual stand-in (FastF1 doesn't provide real
   track width), and gauge ranges (e.g. 0-350 km/h) are fixed constants, not derived per track.
-- No predictive modelling, forecasting, or recommendation logic yet — by design, per the
-  Karpathy "dumb baselines first" approach.
+- Phase 5's forecasting is single-race, pooled-across-drivers, with no driver identity feature
+  - by design, to force the model to learn a general degradation pattern rather than memorize
+  per-driver pace, but it means the models can't yet account for a specific driver/car's
+  characteristics.
+- The naive lag-1 baseline beats every trained model on this race (see Status above) - this is
+  reported honestly rather than hidden, but it also means none of the trained models are
+  currently "production-worthy" for 1-lap-ahead forecasting; a longer forecast horizon or
+  richer features (tyre temperature, fuel load, traffic) would be the next thing to try.
+- The degradation forecast is a straight-line extrapolation of the existing per-stint linear
+  fit; it doesn't know about upcoming pit stops, weather changes, or non-linear wear curves
+  (e.g. a tyre cliff), so it should be read as a short-horizon first-order estimate.
+- Risk-score thresholds (Low/Medium/High) are tertiles of *this race's own* distribution, so
+  they're relative to this specific race, not a fixed, comparable-across-races threshold.
+- No decision-support recommendations or LLM explanation layer yet — that's Phase 6.
 - No LLM/RAG explanation layer yet.
 
 ## Roadmap
@@ -324,9 +378,11 @@ Each phase is built and verified end-to-end on real data before the next one sta
   label on `TeammateGapPct`), measure degradation/consistency, build a benchmarking framework.
   Industrial analogy: fleet surveillance across multiple wells, ESPs, turbines, or compressors.
   *Success criteria met: multi-year comparisons and a benchmarking dashboard tab.*
-- **Phase 5 — Predictive Analytics** ⏳ planned. Forecast lap times and degradation, estimate
-  performance decline, generate risk scores. Models: linear baseline, Random Forest, XGBoost.
-  Success criteria: benchmark predictive performance, explain model outputs.
+- **Phase 5 — Predictive Analytics** ✅ done. Forecast lap times (naive/mean baselines plus
+  Linear Regression, Random Forest, XGBoost on a chronological split) and degradation
+  (linear extrapolation), generate risk scores (data-driven Low/Medium/High categories).
+  *Success criteria met: benchmark predictive performance (the naive baseline currently wins -
+  reported honestly) and explain model outputs (coefficients/feature importances).*
 - **Phase 6 — Operational Intelligence Assistant** ⏳ planned. Add RAG, telemetry explanations,
   and the ability to answer operational questions (e.g. *"Why did Driver X lose performance
   after lap 32?"*). The assistant must retrieve telemetry evidence before generating an answer.

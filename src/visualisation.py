@@ -138,3 +138,63 @@ def plot_degradation_by_year(degradation_df: pd.DataFrame) -> go.Figure:
         labels={"Year": "Year", "AvgDegradationSecondsPerLap": "Avg Degradation (s/lap)"},
     )
     return fig
+
+
+def plot_model_comparison(results_df: pd.DataFrame) -> go.Figure:
+    fig = px.bar(
+        results_df,
+        x="Model",
+        y="MAE",
+        title="Lap Time Forecast: Model Comparison (lower MAE is better)",
+        labels={"MAE": "Mean Absolute Error (s)"},
+    )
+    return fig
+
+
+def plot_predicted_vs_actual(test_df: pd.DataFrame, y_test, y_pred, model_name: str) -> go.Figure:
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(x=test_df["LapNumber"], y=y_test, mode="lines+markers", name="Actual")
+    )
+    fig.add_trace(
+        go.Scatter(x=test_df["LapNumber"], y=y_pred, mode="lines+markers", name=f"Predicted ({model_name})")
+    )
+    fig.update_layout(
+        title=f"Predicted vs Actual Lap Time - {model_name}",
+        xaxis_title="Lap Number",
+        yaxis_title="Lap Time (s)",
+    )
+    return fig
+
+
+def plot_feature_importance(explain_df: pd.DataFrame, value_col: str, title: str) -> go.Figure:
+    fig = px.bar(
+        explain_df.sort_values(value_col),
+        x=value_col,
+        y="Feature",
+        orientation="h",
+        title=title,
+    )
+    return fig
+
+
+def plot_degradation_forecast(observed_df: pd.DataFrame, forecast_df: pd.DataFrame) -> go.Figure:
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=observed_df["StintLap"], y=observed_df["LapTimeSeconds"],
+            mode="lines+markers", name="Observed",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=forecast_df["StintLap"], y=forecast_df["ForecastLapTimeSeconds"],
+            mode="lines+markers", name="Forecast", line={"dash": "dash"},
+        )
+    )
+    fig.update_layout(
+        title="Stint Degradation: Observed vs Forecast",
+        xaxis_title="Stint Lap",
+        yaxis_title="Lap Time (s)",
+    )
+    return fig

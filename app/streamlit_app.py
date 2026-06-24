@@ -26,6 +26,13 @@ from src.fleet_analysis import (
     fleet_benchmark_table,
     teammate_gap_by_year,
 )
+from src.predictive_models import (
+    compare_models,
+    degradation_risk_scores,
+    explain_linear_model,
+    explain_tree_model,
+    forecast_stint_degradation,
+)
 from src.seasonal_analysis import (
     driver_position_trend,
     season_driver_kpis,
@@ -34,10 +41,14 @@ from src.seasonal_analysis import (
 )
 from src.visualisation import (
     plot_degradation_by_year,
+    plot_degradation_forecast,
     plot_driver_comparison,
+    plot_feature_importance,
     plot_lap_times,
+    plot_model_comparison,
     plot_pace_gap_trend,
     plot_position_trend,
+    plot_predicted_vs_actual,
     plot_speed_trace,
     plot_speed_trap_trend,
     plot_throttle_brake_trace,
@@ -59,8 +70,11 @@ st.markdown(
     """
 )
 
-race_tab, season_tab, fleet_tab = st.tabs(
-    ["Race Detail (Phase 1-2)", "Season Monitoring (Phase 3)", "Fleet Monitoring (Phase 4)"]
+race_tab, season_tab, fleet_tab, predictive_tab = st.tabs(
+    [
+        "Race Detail (Phase 1-2)", "Season Monitoring (Phase 3)",
+        "Fleet Monitoring (Phase 4)", "Predictive Analytics (Phase 5)",
+    ]
 )
 
 with race_tab:
@@ -339,5 +353,123 @@ with fleet_tab:
         - **Year-over-year Shift = structural change detector.** A single bad season is normal variation;
           a sustained shift in TeammateGapPct across consecutive years is the long-horizon equivalent of
           flagging that an asset's baseline performance has genuinely changed, not just had a noisy day.
+        """
+    )
+
+with predictive_tab:
+    st.subheader("Data Loading Status")
+
+    required_files = [config.LAPS_FILE, config.WEATHER_FILE, config.TELEMETRY_FILE]
+    missing = [f for f in required_files if not f.exists()]
+    if missing:
+        st.error(
+            "Processed data not found. Run `python -m src.data_ingestion` first to download "
+            f"and cache the {config.SEASON_YEAR} {config.EVENT_NAME} ({config.SESSION_NAME}) session."
+        )
+        st.stop()
+
+    predictive_laps_df, _, _ = load_and_clean_all()
+    st.success(
+        f"Using {config.SEASON_YEAR} {config.EVENT_NAME} (single race): "
+        f"{predictive_laps_df['Driver'].nunique()} drivers, {len(predictive_laps_df)} laps."
+    )
+    st.write(
+        "Scope (v1): pooled across all drivers, without driver identity as a feature, so the "
+        "model has to learn the general tyre-degradation pattern rather than memorize each "
+        "driver's baseline pace. The first lap of every stint has no lap history yet, so it's "
+        "excluded from training/evaluation."
+    )
+
+    st.divider()
+    st.subheader("Lap Time Forecast: Model Comparison")
+    st.write(
+        "All models are evaluated on the same chronological split (test laps happen later in "
+        "the race than anything trained on) - this is a forecast, not interpolation."
+    )
+
+    results_df, artifacts = compare_models(predictive_laps_df)
+    st.dataframe(results_df, use_container_width=True)
+    st.plotly_chart(plot_model_comparison(results_df), use_container_width=True)
+    st.caption(
+        "If a baseline (Naive lag-1 / Mean) beats the trained models here, that's a genuine "
+        "finding, not a bug - lap-to-lap correlation is high, so a dumb baseline can be hard "
+        "to beat at a 1-lap-ahead horizon. See README for the actual result on this race."
+    )
+
+    selected_model = st.selectbox("Model to inspect", list(artifacts["predictions"].keys()))
+    st.plotly_chart(
+        plot_predicted_vs_actual(
+            artifacts["test_df"], artifacts["y_test"], artifacts["predictions"][selected_model], selected_model
+        ),
+        use_container_width=True,
+    )
+
+    st.divider()
+    st.subheader("Explain Model Outputs")
+    e1, e2 = st.columns(2)
+    with e1:
+        st.write("Linear Regression coefficients")
+        st.plotly_chart(
+            plot_feature_importance(
+                explain_linear_model(artifacts["models"]["Linear Regression"], list(artifacts["X_train"].columns)),
+                "Coefficient", "Linear Regression Coefficients",
+            ),
+            use_container_width=True,
+        )
+    with e2:
+        st.write("Random Forest feature importances")
+        st.plotly_chart(
+            plot_feature_importance(
+                explain_tree_model(artifacts["models"]["Random Forest"], list(artifacts["X_train"].columns)),
+                "Importance", "Random Forest Feature Importances",
+            ),
+            use_container_width=True,
+        )
+
+    st.divider()
+    st.subheader("Degradation Forecast")
+    forecast_drivers = sorted(predictive_laps_df["Driver"].unique())
+    f1, f2, f3 = st.columns(3)
+    with f1:
+        forecast_driver = st.selectbox("Driver", forecast_drivers, index=0)
+    driver_stints = sorted(predictive_laps_df.loc[predictive_laps_df["Driver"] == forecast_driver, "Stint"].dropna().unique())
+    with f2:
+        forecast_stint = st.selectbox("Stint", driver_stints, index=0)
+    with f3:
+        laps_ahead = st.slider("Laps ahead", min_value=1, max_value=10, value=5)
+
+    observed = predictive_laps_df[
+        (predictive_laps_df["Driver"] == forecast_driver) & (predictive_laps_df["Stint"] == forecast_stint)
+    ].copy()
+    observed["StintLap"] = range(1, len(observed) + 1)
+    forecast = forecast_stint_degradation(predictive_laps_df, forecast_driver, int(forecast_stint), laps_ahead)
+    if forecast.empty:
+        st.info("Not enough laps in this stint to fit a degradation slope.")
+    else:
+        st.plotly_chart(plot_degradation_forecast(observed, forecast), use_container_width=True)
+
+    st.divider()
+    st.subheader("Degradation Risk Scores")
+    st.write(
+        "ProjectedIncreaseSeconds: forecasted lap-time increase over the next few laps if the "
+        "current degradation trend continues. RiskCategory (Low/Medium/High) is assigned from "
+        "this race's own distribution of projected increases (tertiles), not a fixed constant."
+    )
+    st.dataframe(degradation_risk_scores(predictive_laps_df), use_container_width=True)
+
+    st.divider()
+    st.subheader("From Forecasting to Decision Support")
+    st.markdown(
+        """
+        - **Lap-time forecast = next-reading prediction.** Predicting a future sensor reading from
+          recent operating history is the same shape whether the sensor is lap time or pump vibration.
+        - **Honest baselines first.** A naive "next reading = last reading" forecast and a flat
+          "always predict the average" forecast are evaluated alongside the trained models - if a
+          model can't beat them, that's worth knowing before trusting it operationally.
+        - **Degradation forecast = early-warning extrapolation.** Projecting the current wear trend
+          forward a few cycles is the same logic as forecasting when a component crosses a wear
+          threshold, using only the data already collected.
+        - **Risk score, not a recommendation.** Phase 5 stops at scoring and explaining risk;
+          turning that into an actual maintenance/pit-stop recommendation is Phase 6+ territory.
         """
     )
