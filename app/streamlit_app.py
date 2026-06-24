@@ -26,6 +26,7 @@ from src.fleet_analysis import (
     fleet_benchmark_table,
     teammate_gap_by_year,
 )
+from src.operational_assistant import answer_question
 from src.predictive_models import (
     compare_models,
     degradation_risk_scores,
@@ -70,10 +71,11 @@ st.markdown(
     """
 )
 
-race_tab, season_tab, fleet_tab, predictive_tab = st.tabs(
+race_tab, season_tab, fleet_tab, predictive_tab, assistant_tab = st.tabs(
     [
         "Race Detail (Phase 1-2)", "Season Monitoring (Phase 3)",
         "Fleet Monitoring (Phase 4)", "Predictive Analytics (Phase 5)",
+        "Operational Assistant (Phase 6)",
     ]
 )
 
@@ -471,5 +473,88 @@ with predictive_tab:
           threshold, using only the data already collected.
         - **Risk score, not a recommendation.** Phase 5 stops at scoring and explaining risk;
           turning that into an actual maintenance/pit-stop recommendation is Phase 6+ territory.
+        """
+    )
+
+with assistant_tab:
+    st.subheader("Data Loading Status")
+
+    required_files = [config.LAPS_FILE, config.WEATHER_FILE, config.TELEMETRY_FILE]
+    missing = [f for f in required_files if not f.exists()]
+    if missing:
+        st.error(
+            "Processed data not found. Run `python -m src.data_ingestion` first to download "
+            f"and cache the {config.SEASON_YEAR} {config.EVENT_NAME} ({config.SESSION_NAME}) session."
+        )
+        st.stop()
+
+    assistant_laps_df, _, _ = load_and_clean_all()
+    st.success(
+        f"Using {config.SEASON_YEAR} {config.EVENT_NAME} (single race): "
+        f"{assistant_laps_df['Driver'].nunique()} drivers, {len(assistant_laps_df)} laps."
+    )
+    st.write(
+        f"Runs against a **local** Ollama server (`{config.OLLAMA_MODEL}` at {config.OLLAMA_BASE_URL}), "
+        "not a hosted API - the same approach would let this run against confidential real "
+        "ESP/SCADA data without sending anything to a third-party provider. Start Ollama with "
+        "`ollama serve` if you see a connection error below."
+    )
+
+    st.divider()
+    st.subheader("Ask a Question")
+    st.write(
+        "The assistant only answers questions it can parse into a **driver code + lap number** "
+        "(e.g. \"Why did VER lose performance after lap 32?\"). If it can't identify both, or "
+        "finds no matching lap, it says so and never calls the LLM - every answer it does give "
+        "is grounded in retrieved telemetry, not invented."
+    )
+
+    example_questions = [
+        "Why did BOT lose performance at lap 13?",
+        "Why did HUL lose performance at lap 2?",
+        "Why did VER lose performance after lap 18?",
+        "How was the race overall?",  # deliberately unanswerable - no driver/lap to parse
+    ]
+    question = st.selectbox("Example question (or type your own below)", example_questions)
+    custom_question = st.text_input("Or type your own question", value="")
+    final_question = custom_question.strip() or question
+
+    if st.button("Ask"):
+        with st.spinner("Retrieving evidence and generating an answer..."):
+            try:
+                result = answer_question(assistant_laps_df, final_question)
+            except Exception as exc:
+                st.error(
+                    f"Could not reach the local Ollama server: {exc}\n\n"
+                    "Make sure Ollama is running (`ollama serve`) and the model in "
+                    f"src/config.py:OLLAMA_MODEL (`{config.OLLAMA_MODEL}`) is pulled "
+                    f"(`ollama pull {config.OLLAMA_MODEL}`)."
+                )
+                result = None
+
+        if result is not None:
+            st.write(f"**Parsed:** driver = `{result['parsed']['driver']}`, lap = `{result['parsed']['lap_number']}`")
+
+            if not result["grounded"]:
+                st.warning(result["answer"])
+            else:
+                with st.expander("Evidence retrieved (what the LLM was actually given)"):
+                    st.code(result["evidence_summary"])
+                st.markdown("**Answer**")
+                st.write(result["answer"])
+
+    st.divider()
+    st.subheader("From Evidence Retrieval to Trustworthy Explanations")
+    st.markdown(
+        """
+        - **Retrieve before generate = audit trail.** The evidence block shown above is exactly
+          what the LLM was given - nothing more. For an operational decision, being able to show
+          *why* an assistant said what it said is as important as the answer itself.
+        - **No driver/lap parsed = no LLM call.** Refusing to guess when the question can't be
+          grounded is what "no hallucinated conclusions" means in practice, not just a prompt
+          instruction hoping the model behaves.
+        - **Local LLM = confidentiality.** Running against Ollama instead of a hosted API is the
+          same architecture you'd need for real, proprietary ESP/SCADA data that can't leave the
+          plant network.
         """
     )

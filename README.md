@@ -36,6 +36,11 @@ view, feature importances, an interactive degradation forecast, and risk scores.
 
 ![Predictive Analytics tab](assets/screenshots/predictive_analytics_tab.png)
 
+**Operational Assistant (Phase 6)** - asks a real question about the 2024 race, shows the
+parsed driver/lap, the retrieved evidence, and the local LLM's grounded answer.
+
+![Operational Assistant tab](assets/screenshots/operational_assistant_tab.png)
+
 **Arcade Replay** - standalone "digital control room" window: a car moving around the real
 track shape with a live speed/throttle/brake/gear instrument cluster.
 
@@ -114,10 +119,11 @@ industrial-telemetry-intelligence/
     seasonal_analysis.py    # season-wide position/speed trends and KPIs
     fleet_analysis.py       # multi-year relative pace, degradation, year-over-year shift
     predictive_models.py    # lap-time forecast (baselines + Linear/RF/XGBoost), risk scores
+    operational_assistant.py # Phase 6: parse question -> retrieve evidence -> local LLM
     replay_data.py          # pure geometry/interpolation helpers for the Arcade replay
     visualisation.py        # shared Plotly figures
   app/
-    streamlit_app.py        # dashboard: Race Detail + Season + Fleet + Predictive tabs
+    streamlit_app.py        # dashboard: Race Detail + Season + Fleet + Predictive + Assistant tabs
     arcade_replay.py         # standalone Arcade window: car + live HUD on the track
   notebooks/
     01_data_exploration.ipynb
@@ -130,6 +136,7 @@ industrial-telemetry-intelligence/
     test_fleet_analysis.py
     test_replay_data.py
     test_predictive_models.py
+    test_operational_assistant.py
   data/                     # raw/processed/cache - gitignored, regenerated locally
   outputs/                  # figures/reports - gitignored, regenerated locally
 ```
@@ -148,6 +155,14 @@ On macOS, `xgboost` (used in Phase 5) needs the OpenMP runtime, which isn't bund
 
 ```bash
 brew install libomp
+```
+
+Phase 6 (the operational assistant) needs a local [Ollama](https://ollama.com) server - not a
+hosted LLM API - so the same approach works against confidential real ESP/SCADA data later:
+
+```bash
+ollama serve                        # start the local server
+ollama pull qwen2.5:7b-instruct     # default model (src/config.py:OLLAMA_MODEL)
 ```
 
 ## Running the pipeline
@@ -199,17 +214,26 @@ brew install libomp
    python -m src.predictive_models
    ```
 
-6. **Run the dashboard**:
+6. **Ask the operational assistant** (optional, sanity check - needs Ollama running, see Setup):
+
+   ```bash
+   python -m src.operational_assistant
+   ```
+
+   Prints the retrieved evidence and the local LLM's answer for a grounded example question.
+
+7. **Run the dashboard**:
 
    ```bash
    streamlit run app/streamlit_app.py
    ```
 
-   The dashboard has four tabs: **Race Detail** (Phase 1-2, needs step 1's data),
+   The dashboard has five tabs: **Race Detail** (Phase 1-2, needs step 1's data),
    **Season Monitoring** (Phase 3, needs step 3's data), **Fleet Monitoring**
-   (Phase 4, needs step 4's data), and **Predictive Analytics** (Phase 5, needs step 1's data).
+   (Phase 4, needs step 4's data), **Predictive Analytics** (Phase 5, needs step 1's data),
+   and **Operational Assistant** (Phase 6, needs step 1's data and Ollama running).
 
-7. **Run the Arcade replay** (separate native window, needs step 1's data):
+8. **Run the Arcade replay** (separate native window, needs step 1's data):
 
    ```bash
    python app/arcade_replay.py --driver VER
@@ -219,10 +243,10 @@ brew install libomp
    instrument cluster (speed dial, throttle dial, brake lamp, gear box) above the track and
    a checkered start/finish marker to gauge lap progress.
 
-8. **Run the notebooks** (`notebooks/01_data_exploration.ipynb`, `02_baseline_analysis.ipynb`,
+9. **Run the notebooks** (`notebooks/01_data_exploration.ipynb`, `02_baseline_analysis.ipynb`,
    `03_anomaly_detection.ipynb`) for the same analysis in a more exploratory format.
 
-9. **Run tests**:
+10. **Run tests**:
 
    ```bash
    pytest tests/ -v
@@ -231,7 +255,7 @@ brew install libomp
    Tests use synthetic fixtures and a temp directory — they never overwrite the real
    downloaded data in `data/processed/`.
 
-## Status: Phases 1-5 done, plus a v1 operational replay
+## Status: Phases 1-6 done, plus a v1 operational replay
 
 Dataset so far: 2024 Bahrain Grand Prix Race session (all 20 drivers' lap/weather/telemetry
 data), the full 2024 season (all 24 race rounds, ~26,600 laps), and Bahrain Grand Prix every
@@ -306,8 +330,27 @@ year from 2020-2025 (~6,500 laps).
   predicted-vs-actual view per model, feature-importance charts, an interactive degradation
   forecast (driver/stint/laps-ahead selectors), and the risk-score table. *(Phase 5 success
   criteria: benchmark predictive performance, explain model outputs)*
+- An operational assistant that answers plain-English questions shaped like "Why did VER lose
+  performance after lap 32?" by **retrieving real telemetry evidence first**, then asking a
+  **local** LLM (Ollama, default `qwen2.5:7b-instruct`) to explain that evidence - never the
+  other way around. If a question can't be parsed into a driver + lap number, or no matching
+  lap is found, the assistant says so and **never calls the LLM**, so every answer it does give
+  is grounded by construction, not by hoping a prompt instruction is obeyed. *(Phase 6)*
+- Runs against a local Ollama server rather than a hosted API, specifically so the same
+  architecture would work against confidential real ESP/SCADA data that can't be sent to a
+  third-party provider. *(Phase 6)*
+- Validated on a real example: asking why BOT lost performance at lap 13 of the actual 2024
+  Bahrain race correctly identifies the pit stop onto a fresh HARD tyre (`TyreLife` reset to 1,
+  flagged as a z-score anomaly) as the cause, citing the exact lap times - not a fabricated
+  explanation. *(Phase 6 success criteria: evidence-backed explanations, no hallucinated
+  conclusions)*
+- A "Operational Assistant" dashboard tab: example/custom question input, the parsed
+  driver/lap, an expandable view of the exact evidence text given to the LLM, and the final
+  answer. *(Phase 6)*
 - pytest coverage for ingestion round-tripping, feature engineering, seasonal analysis, fleet
-  analysis, predictive models, and the replay's geometry/interpolation helpers (51 tests total).
+  analysis, predictive models, the operational assistant (with the LLM call mocked/injected so
+  tests don't require Ollama running), and the replay's geometry/interpolation helpers (62
+  tests total).
 
 Fastest-lap telemetry (speed/throttle/brake/X/Y position) is cached for every driver in the
 Bahrain race session, so the Race Detail tab's driver selector, telemetry comparison, and the
@@ -355,7 +398,19 @@ Arcade replay all cover the full grid. `src/config.py:COMPARISON_DRIVERS` only s
   (e.g. a tyre cliff), so it should be read as a short-horizon first-order estimate.
 - Risk-score thresholds (Low/Medium/High) are tertiles of *this race's own* distribution, so
   they're relative to this specific race, not a fixed, comparable-across-races threshold.
-- No decision-support recommendations or LLM explanation layer yet — that's Phase 6.
+- The assistant's question parsing is regex/keyword matching (one driver code + one "lap N"
+  pattern), not an embeddings-based or LLM-based parser - by design, as the smallest version
+  that supports the target question shape. Questions that don't mention a 3-letter driver code
+  and the word "lap" followed by a number won't be parsed, even if a human would understand them.
+- The LLM's *causal reasoning* is only as good as the model, even when the *facts* it's given
+  are correct: in testing, the assistant correctly cited the right lap/tyre data but sometimes
+  added a speculative causal gloss (e.g. guessing "possible tyre damage") beyond what the
+  evidence actually established (the real explanation is just a normal out-lap on a fresh
+  tyre after a pit stop). Grounding prevents fabricated *facts*, not necessarily an
+  overconfident *interpretation* of those facts - a real limitation of the current prompt,
+  not papered over here.
+- No decision-support recommendations (e.g. an actual pit-stop/maintenance call) yet - Phase 6
+  stops at explanation, not action.
 - No LLM/RAG explanation layer yet.
 
 ## Roadmap
@@ -385,10 +440,13 @@ Each phase is built and verified end-to-end on real data before the next one sta
   (linear extrapolation), generate risk scores (data-driven Low/Medium/High categories).
   *Success criteria met: benchmark predictive performance (the naive baseline currently wins -
   reported honestly) and explain model outputs (coefficients/feature importances).*
-- **Phase 6 — Operational Intelligence Assistant** ⏳ planned. Add RAG, telemetry explanations,
-  and the ability to answer operational questions (e.g. *"Why did Driver X lose performance
-  after lap 32?"*). The assistant must retrieve telemetry evidence before generating an answer.
-  Success criteria: evidence-backed explanations, no hallucinated conclusions.
+- **Phase 6 — Operational Intelligence Assistant** ✅ done. Answers operational questions (e.g.
+  *"Why did Driver X lose performance after lap 32?"*) by retrieving telemetry evidence first,
+  then asking a local LLM (Ollama) to explain it - chosen over a hosted API so the same
+  approach works against confidential real ESP/SCADA data. *Success criteria met:
+  evidence-backed explanations (validated on the real BOT lap-13 anomaly); no hallucinated
+  conclusions (the LLM is never called without grounding evidence) - though see limitations
+  for a real caveat about speculative causal framing within an otherwise-grounded answer.*
 
 ## Architecture rule
 

@@ -40,3 +40,10 @@ SEASON_LAPS_FILE = PROCESSED_DIR / "season_laps.parquet"
 FLEET_EVENT_NAME = "Bahrain Grand Prix"
 FLEET_YEARS = list(range(2020, 2026))
 FLEET_LAPS_FILE = PROCESSED_DIR / "fleet_laps.parquet"
+
+# Phase 6: operational intelligence assistant. Runs against a local Ollama
+# server (not a hosted API) so this approach stays usable with confidential
+# real ESP/SCADA data that can't be sent to a third-party LLM provider.
+OLLAMA_BASE_URL = "http://localhost:11434"
+OLLAMA_MODEL = "qwen2.5:7b-instruct"
+ASSISTANT_EVIDENCE_WINDOW = 5  # laps either side of the lap in question
