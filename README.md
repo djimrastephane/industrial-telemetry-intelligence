@@ -239,16 +239,23 @@ year from 2020-2025 (~6,500 laps).
 - A "Season Monitoring" dashboard tab with driver multiselect, position/speed trend charts,
   and KPI tables. *(Phase 3 success criteria: season-wide KPIs, asset health indicators)*
 - Multi-year ingestion of the same race (Bahrain GP, 2020-2025), using the same lean per-lap
-  summary as Phase 3. *(Phase 4)*
-- Cross-year benchmarking via `RelativePacePct` (each driver's average lap time vs. that
-  year's single fastest lap), since raw lap times aren't comparable across years of changing
-  car regulations. *(Phase 4)*
-- Multi-year tyre degradation trend per driver, and a `Shift` label (Declined / Improved /
-  Stable) flagging year-over-year changes in relative pace - the long-horizon analogue of
-  Phase 3's `PositionTrendSlope`. *(Phase 4)*
-- A "Fleet Monitoring" dashboard tab with driver multiselect, relative-pace and degradation
-  trend charts, and a benchmarking table. *(Phase 4 success criteria: multi-year comparisons,
-  benchmarking dashboard)*
+  summary as Phase 3 plus `PitInTime`/`PitOutTime`. *(Phase 4)*
+- Cross-year benchmarking, led by `TeammateGapPct` (pace vs. your own teammate that year - same
+  chassis/engine, so it cancels out almost all of the regulation/car-development effect), with
+  `FieldAverageGapPct` and `FastestLapGapPct` kept as secondary, more noise-sensitive context
+  columns. Raw lap times aren't directly comparable across years of changing car regulations,
+  so none of these compare absolute lap times across years. *(Phase 4)*
+- Reliability and operational-efficiency proxies: `RaceCompletionRatePct` (laps completed vs.
+  the most anyone completed that year, standing in for true DNF/mechanical-retirement
+  classification, which FastF1 doesn't reliably provide for every season), `PitStopCount`, and
+  `AvgPitStopRecoveryLaps` (laps to regain pre-stop position). *(Phase 4)*
+- Multi-year tyre degradation trend and `LapTimeConsistencyStd` per driver, and a `Shift` label
+  (Declined / Improved / Stable) flagging year-over-year changes in `TeammateGapPct` - the
+  long-horizon analogue of Phase 3's `PositionTrendSlope`. *(Phase 4)*
+- A "Fleet Monitoring" dashboard tab leading with the Teammate Gap trend, secondary pace
+  benchmarks behind an expander, degradation/reliability/consistency context, and a full
+  benchmarking table. *(Phase 4 success criteria: multi-year comparisons, benchmarking
+  dashboard)*
 - A standalone Arcade replay (`app/arcade_replay.py`): a car moving around the real track
   shape for one driver's cached fastest lap, a two-line track outline, a checkered
   start/finish marker, and an instrument-cluster panel above the track (speed dial, throttle
@@ -256,7 +263,7 @@ year from 2020-2025 (~6,500 laps).
   screen. Pure geometry/interpolation logic (including the gauge-needle angle math) lives in
   `replay_data.py` so it's unit-tested without needing a display.
 - pytest coverage for ingestion round-tripping, feature engineering, seasonal analysis, fleet
-  analysis, and the replay's geometry/interpolation helpers (31 tests total).
+  analysis, and the replay's geometry/interpolation helpers (38 tests total).
 
 Fastest-lap telemetry (speed/throttle/brake/X/Y position) is cached for every driver in the
 Bahrain race session, so the Race Detail tab's driver selector, telemetry comparison, and the
@@ -273,11 +280,22 @@ Arcade replay all cover the full grid. `src/config.py:COMPARISON_DRIVERS` only s
 - `FinishPosition` is a proxy (last recorded running position), not the official classified
   result — it won't reflect post-race penalties or disqualifications.
 - Season-wide anomaly detection isn't built yet — Phase 3 only adds trend KPIs, not flagging.
-- `RelativePacePct` benchmarks against that year's single fastest lap, which is itself one
-  noisy data point (e.g. an early red flag can leave an artificially slow "fastest" lap) -
-  a more robust benchmark (e.g. median of the top few laps) is a reasonable future improvement.
+- `FastestLapGapPct` (kept as a secondary context column) benchmarks against that year's single
+  fastest lap, which is itself one noisy data point (e.g. an early red flag can leave an
+  artificially slow "fastest" lap) - this is exactly why `TeammateGapPct` is the primary
+  benchmark instead.
+- `TeammateGapPct` is `NaN` for any driver whose team had no other driver that year (e.g. a
+  one-off seat) - there's no fallback benchmark for those rows yet.
+- `RaceCompletionRatePct` is a lap-count proxy, not true DNF/mechanical-retirement
+  classification - FastF1's results data (which would carry the official reason) isn't
+  reliably available for every season (`"Failed to load result data from Ergast"` shows up in
+  the ingestion logs for recent seasons).
+- Qualifying-session variance isn't ingested yet - only Race sessions are downloaded, so
+  consistency metrics are race-lap-time based, not qualifying-lap based.
 - `Shift` (year-over-year change) uses a fixed threshold (0.3 percentage points) rather than
   anything statistically derived from the data's own variance.
+- `AvgPitStopRecoveryLaps` uses recorded running `Position`, not exact pit-lane stationary
+  time, since that requires timing-loop data beyond the per-lap summary.
 - The Arcade replay's track width is a fixed visual stand-in (FastF1 doesn't provide real
   track width), and gauge ranges (e.g. 0-350 km/h) are fixed constants, not derived per track.
 - No predictive modelling, forecasting, or recommendation logic yet — by design, per the
@@ -300,10 +318,12 @@ Each phase is built and verified end-to-end on real data before the next one sta
   monitoring multiple assets over time. *Success criteria met: season-wide KPIs and an
   asset-health indicator (PositionTrendSlope) per driver and team.*
 - **Phase 4 — Multi-Year Fleet Monitoring** ✅ done. Bahrain GP 2020–2025: compare operating
-  behaviour across years (via `RelativePacePct`, not raw lap times), detect long-term
-  performance shifts (`Shift` label), measure degradation patterns, build a benchmarking
-  framework. Industrial analogy: fleet surveillance across multiple wells, ESPs, turbines, or
-  compressors. *Success criteria met: multi-year comparisons and a benchmarking dashboard tab.*
+  behaviour across years using teammate- and field-relative pace (not raw lap times or a
+  single fastest lap), reliability (`RaceCompletionRatePct`), operational efficiency
+  (`PitStopCount`, `AvgPitStopRecoveryLaps`), detect long-term performance shifts (`Shift`
+  label on `TeammateGapPct`), measure degradation/consistency, build a benchmarking framework.
+  Industrial analogy: fleet surveillance across multiple wells, ESPs, turbines, or compressors.
+  *Success criteria met: multi-year comparisons and a benchmarking dashboard tab.*
 - **Phase 5 — Predictive Analytics** ⏳ planned. Forecast lap times and degradation, estimate
   performance decline, generate risk scores. Models: linear baseline, Random Forest, XGBoost.
   Success criteria: benchmark predictive performance, explain model outputs.

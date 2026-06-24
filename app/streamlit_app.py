@@ -22,8 +22,9 @@ from src.baseline_models import (
 from src.data_cleaning import load_and_clean_all, load_and_clean_fleet, load_and_clean_season
 from src.fleet_analysis import (
     degradation_by_year,
-    driver_relative_pace_by_year,
+    field_average_gap_by_year,
     fleet_benchmark_table,
+    teammate_gap_by_year,
 )
 from src.seasonal_analysis import (
     driver_position_trend,
@@ -35,8 +36,8 @@ from src.visualisation import (
     plot_degradation_by_year,
     plot_driver_comparison,
     plot_lap_times,
+    plot_pace_gap_trend,
     plot_position_trend,
-    plot_relative_pace_trend,
     plot_speed_trace,
     plot_speed_trap_trend,
     plot_throttle_brake_trace,
@@ -259,18 +260,40 @@ with fleet_tab:
         "Drivers to plot", fleet_drivers, default=default_fleet_drivers
     )
 
-    pace_df = driver_relative_pace_by_year(fleet_laps_df)
+    teammate_df = teammate_gap_by_year(fleet_laps_df)
+    field_df = field_average_gap_by_year(fleet_laps_df)
     degradation_df = degradation_by_year(fleet_laps_df)
 
-    st.subheader("Multi-Year Relative Pace Trend")
+    st.subheader("Multi-Year Teammate Gap Trend (primary benchmark)")
     st.write(
-        "Pace shown as % behind that year's single fastest lap, since raw lap times aren't "
-        "directly comparable across years of changing car regulations."
+        "Pace vs. your own teammate that year - same chassis and engine, so this cancels out "
+        "almost all of the regulation/car-development effect, leaving mostly driver/strategy "
+        "difference. NaN for a driver whose team had no other driver that year."
     )
     st.plotly_chart(
-        plot_relative_pace_trend(pace_df[pace_df["Driver"].isin(selected_fleet_drivers)], "Driver"),
+        plot_pace_gap_trend(
+            teammate_df[teammate_df["Driver"].isin(selected_fleet_drivers)],
+            "Driver", "TeammateGapPct",
+            "Multi-Year Teammate Gap Trend by Driver", "Pace vs Teammate (%)",
+        ),
         use_container_width=True,
     )
+
+    with st.expander("Secondary pace benchmarks (Field Average Gap, Fastest Lap Gap)"):
+        st.write(
+            "Field Average Gap compares against the whole field's average pace that year. "
+            "Fastest Lap Gap compares against a single lap, which is one noisy data point "
+            "(e.g. an early red flag can leave an artificially slow 'fastest' lap) - kept here "
+            "for context, not as the primary benchmark."
+        )
+        st.plotly_chart(
+            plot_pace_gap_trend(
+                field_df[field_df["Driver"].isin(selected_fleet_drivers)],
+                "Driver", "FieldAverageGapPct",
+                "Multi-Year Field Average Gap Trend by Driver", "Pace vs Field Average (%)",
+            ),
+            use_container_width=True,
+        )
 
     st.subheader("Multi-Year Tyre Degradation Trend")
     st.plotly_chart(
@@ -279,10 +302,19 @@ with fleet_tab:
     )
 
     st.divider()
+    st.subheader("Reliability and Consistency")
+    st.write(
+        "RaceCompletionRatePct is a reliability *proxy* (laps completed vs. the most anyone "
+        "completed that year) - FastF1's official DNF/retirement-reason data isn't reliably "
+        "available for every season, so this stands in for it."
+    )
+
+    st.divider()
     st.subheader("Benchmarking Table and Year-over-Year Shift")
     st.write(
-        "Shift: Declined / Improved / Stable, comparing each driver's relative pace this year "
-        "against their relative pace the previous year they appeared in this race."
+        "Shift: Declined / Improved / Stable, comparing each driver's TeammateGapPct this year "
+        "against the previous year they appeared in this race (falls back to 'N/A' with no "
+        "teammate data)."
     )
     st.dataframe(
         fleet_benchmark_table(fleet_laps_df).query("Driver in @selected_fleet_drivers"),
@@ -295,12 +327,17 @@ with fleet_tab:
         """
         - **Year = long observation window.** Comparing the same race across years is the same shape as
           comparing a fleet of wells, ESPs, or turbines across multiple years of operation.
-        - **Relative pace, not raw lap time = fair benchmarking.** Cars and regulations change every year,
-          the same way equipment generations and operating conditions change for industrial assets -
-          benchmarking against the best performer *in the same period* controls for that, instead of
-          comparing raw numbers across eras that aren't really comparable.
+        - **Teammate gap = same-asset-class benchmarking.** Comparing a driver to their own teammate (same
+          chassis, same engine) is the same idea as comparing two nominally identical pumps on the same
+          site - it cancels out generation/regulation effects, leaving the difference that actually matters.
+        - **RaceCompletionRatePct = reliability proxy.** Standing in for true DNF/mechanical-retirement
+          classification (not reliably available from FastF1 for every season), the same way a production
+          system might track "operating hours vs. expected hours" when failure-cause logging is incomplete.
+        - **PitStopCount / AvgPitStopRecoveryLaps = operational efficiency.** How often, and how costly,
+          an intervention was - directly analogous to maintenance-stop frequency and recovery time for an
+          industrial asset.
         - **Year-over-year Shift = structural change detector.** A single bad season is normal variation;
-          a sustained shift across consecutive years is the long-horizon equivalent of flagging that an
-          asset's baseline performance has genuinely changed, not just had a noisy day.
+          a sustained shift in TeammateGapPct across consecutive years is the long-horizon equivalent of
+          flagging that an asset's baseline performance has genuinely changed, not just had a noisy day.
         """
     )

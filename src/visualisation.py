@@ -110,17 +110,18 @@ def plot_speed_trap_trend(speed_df: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def plot_relative_pace_trend(pace_df: pd.DataFrame, entity_col: str) -> go.Figure:
-    """Pace relative to that year's fastest lap, across years. Lower is
-    better, so the y-axis is inverted to match how the gap is usually read."""
+def plot_pace_gap_trend(pace_df: pd.DataFrame, entity_col: str, y_col: str, title: str, y_label: str) -> go.Figure:
+    """Pace-gap trend across years for any of the fleet relative-pace
+    benchmarks (TeammateGapPct, FieldAverageGapPct, FastestLapGapPct).
+    Lower is better, so the y-axis is inverted to match how a gap is usually read."""
     fig = px.line(
         pace_df,
         x="Year",
-        y="RelativePacePct",
+        y=y_col,
         color=entity_col,
         markers=True,
-        title=f"Multi-Year Relative Pace Trend by {entity_col}",
-        labels={"Year": "Year", "RelativePacePct": "Pace vs Year's Fastest Lap (%)"},
+        title=title,
+        labels={"Year": "Year", y_col: y_label},
     )
     fig.update_yaxes(autorange="reversed")
     return fig

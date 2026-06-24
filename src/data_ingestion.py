@@ -152,7 +152,11 @@ def get_fleet_lap_summary(
 ) -> pd.DataFrame:
     """Lean per-lap summary for multi-year fleet monitoring: the same race,
     every year, so the same lean columns as season monitoring but tagged by
-    Year instead of RoundNumber."""
+    Year instead of RoundNumber.
+
+    Includes PitInTime/PitOutTime (pit-stop count and recovery-after-pit-stop
+    are derived from these) alongside the season-monitoring columns.
+    """
     columns = [
         "Driver",
         "Team",
@@ -163,6 +167,8 @@ def get_fleet_lap_summary(
         "Compound",
         "TyreLife",
         "Stint",
+        "PitInTime",
+        "PitOutTime",
     ]
     laps = session.laps.loc[:, columns].copy()
     laps["LapTimeSeconds"] = laps["LapTime"].dt.total_seconds()
