@@ -113,19 +113,19 @@ with race_tab:
 
     st.divider()
     st.subheader("Lap Time Trend")
-    st.plotly_chart(plot_lap_times(laps_df[laps_df["Driver"].isin([driver_a, driver_b])]), use_container_width=True)
+    st.plotly_chart(plot_lap_times(laps_df[laps_df["Driver"].isin([driver_a, driver_b])]), width="stretch")
 
     st.subheader("Tyre Degradation")
-    st.plotly_chart(plot_tyre_life_vs_laptime(laps_df[laps_df["Driver"].isin([driver_a, driver_b])]), use_container_width=True)
-    st.dataframe(degradation_summary(laps_df[laps_df["Driver"].isin([driver_a, driver_b])]), use_container_width=True)
+    st.plotly_chart(plot_tyre_life_vs_laptime(laps_df[laps_df["Driver"].isin([driver_a, driver_b])]), width="stretch")
+    st.dataframe(degradation_summary(laps_df[laps_df["Driver"].isin([driver_a, driver_b])]), width="stretch")
 
     st.subheader("Telemetry Trace (Fastest Lap)")
     telemetry_drivers = set(telemetry_df["Driver"].unique()) if not telemetry_df.empty else set()
     if driver_a in telemetry_drivers:
-        st.plotly_chart(plot_speed_trace(telemetry_df, driver_a), use_container_width=True)
-        st.plotly_chart(plot_throttle_brake_trace(telemetry_df, driver_a), use_container_width=True)
+        st.plotly_chart(plot_speed_trace(telemetry_df, driver_a), width="stretch")
+        st.plotly_chart(plot_throttle_brake_trace(telemetry_df, driver_a), width="stretch")
     if {driver_a, driver_b}.issubset(telemetry_drivers):
-        st.plotly_chart(plot_driver_comparison(telemetry_df, driver_a, driver_b), use_container_width=True)
+        st.plotly_chart(plot_driver_comparison(telemetry_df, driver_a, driver_b), width="stretch")
     else:
         st.info(
             f"No cached fastest-lap telemetry for {sorted({driver_a, driver_b} - telemetry_drivers)} "
@@ -138,15 +138,15 @@ with race_tab:
     b1, b2 = st.columns(2)
     with b1:
         st.write("Average lap time by driver")
-        st.dataframe(average_lap_time_by_driver(laps_df), use_container_width=True)
+        st.dataframe(average_lap_time_by_driver(laps_df), width="stretch")
         st.write("Fastest lap per driver")
-        st.dataframe(fastest_lap_per_driver(laps_df), use_container_width=True)
+        st.dataframe(fastest_lap_per_driver(laps_df), width="stretch")
     with b2:
         st.write("Consistency score (lap time std dev, lower = more consistent)")
-        st.dataframe(consistency_score(laps_df), use_container_width=True)
+        st.dataframe(consistency_score(laps_df), width="stretch")
 
     st.subheader("Anomaly Table (|z-score| > threshold)")
-    st.dataframe(get_anomaly_table(laps_df), use_container_width=True)
+    st.dataframe(get_anomaly_table(laps_df), width="stretch")
 
     st.divider()
     st.subheader("From Lap Telemetry to Asset Monitoring")
@@ -203,13 +203,13 @@ with season_tab:
     st.subheader("Season Finishing Position Trend")
     st.plotly_chart(
         plot_position_trend(position_df[position_df["Driver"].isin(selected_drivers)], "Driver"),
-        use_container_width=True,
+        width="stretch",
     )
 
     st.subheader("Season Speed Trap Trend")
     st.plotly_chart(
         plot_speed_trap_trend(speed_df[speed_df["Driver"].isin(selected_drivers)]),
-        use_container_width=True,
+        width="stretch",
     )
 
     st.divider()
@@ -221,10 +221,10 @@ with season_tab:
     k1, k2 = st.columns(2)
     with k1:
         st.write("Driver KPIs")
-        st.dataframe(season_driver_kpis(season_laps_df), use_container_width=True)
+        st.dataframe(season_driver_kpis(season_laps_df), width="stretch")
     with k2:
         st.write("Team KPIs")
-        st.dataframe(season_team_kpis(season_laps_df), use_container_width=True)
+        st.dataframe(season_team_kpis(season_laps_df), width="stretch")
 
     st.divider()
     st.subheader("From Race Telemetry to Fleet Monitoring")
@@ -290,7 +290,7 @@ with fleet_tab:
             "Driver", "TeammateGapPct",
             "Multi-Year Teammate Gap Trend by Driver", "Pace vs Teammate (%)",
         ),
-        use_container_width=True,
+        width="stretch",
     )
 
     with st.expander("Secondary pace benchmarks (Field Average Gap, Fastest Lap Gap)"):
@@ -306,13 +306,13 @@ with fleet_tab:
                 "Driver", "FieldAverageGapPct",
                 "Multi-Year Field Average Gap Trend by Driver", "Pace vs Field Average (%)",
             ),
-            use_container_width=True,
+            width="stretch",
         )
 
     st.subheader("Multi-Year Tyre Degradation Trend")
     st.plotly_chart(
         plot_degradation_by_year(degradation_df[degradation_df["Driver"].isin(selected_fleet_drivers)]),
-        use_container_width=True,
+        width="stretch",
     )
 
     st.divider()
@@ -332,7 +332,7 @@ with fleet_tab:
     )
     st.dataframe(
         fleet_benchmark_table(fleet_laps_df).query("Driver in @selected_fleet_drivers"),
-        use_container_width=True,
+        width="stretch",
     )
 
     st.divider()
@@ -388,8 +388,8 @@ with predictive_tab:
     )
 
     results_df, artifacts = compare_models(predictive_laps_df)
-    st.dataframe(results_df, use_container_width=True)
-    st.plotly_chart(plot_model_comparison(results_df), use_container_width=True)
+    st.dataframe(results_df, width="stretch")
+    st.plotly_chart(plot_model_comparison(results_df), width="stretch")
     st.caption(
         "If a baseline (Naive lag-1 / Mean) beats the trained models here, that's a genuine "
         "finding, not a bug - lap-to-lap correlation is high, so a dumb baseline can be hard "
@@ -401,7 +401,7 @@ with predictive_tab:
         plot_predicted_vs_actual(
             artifacts["test_df"], artifacts["y_test"], artifacts["predictions"][selected_model], selected_model
         ),
-        use_container_width=True,
+        width="stretch",
     )
 
     st.divider()
@@ -414,7 +414,7 @@ with predictive_tab:
                 explain_linear_model(artifacts["models"]["Linear Regression"], list(artifacts["X_train"].columns)),
                 "Coefficient", "Linear Regression Coefficients",
             ),
-            use_container_width=True,
+            width="stretch",
         )
     with e2:
         st.write("Random Forest feature importances")
@@ -423,7 +423,7 @@ with predictive_tab:
                 explain_tree_model(artifacts["models"]["Random Forest"], list(artifacts["X_train"].columns)),
                 "Importance", "Random Forest Feature Importances",
             ),
-            use_container_width=True,
+            width="stretch",
         )
 
     st.divider()
@@ -446,7 +446,7 @@ with predictive_tab:
     if forecast.empty:
         st.info("Not enough laps in this stint to fit a degradation slope.")
     else:
-        st.plotly_chart(plot_degradation_forecast(observed, forecast), use_container_width=True)
+        st.plotly_chart(plot_degradation_forecast(observed, forecast), width="stretch")
 
     st.divider()
     st.subheader("Degradation Risk Scores")
@@ -455,7 +455,7 @@ with predictive_tab:
         "current degradation trend continues. RiskCategory (Low/Medium/High) is assigned from "
         "this race's own distribution of projected increases (tertiles), not a fixed constant."
     )
-    st.dataframe(degradation_risk_scores(predictive_laps_df), use_container_width=True)
+    st.dataframe(degradation_risk_scores(predictive_laps_df), width="stretch")
 
     st.divider()
     st.subheader("From Forecasting to Decision Support")
