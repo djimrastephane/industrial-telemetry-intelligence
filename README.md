@@ -12,6 +12,26 @@ well sensor data is almost never publicly available. F1 telemetry is one of the 
 datasets that shares the same shape as that data: high-frequency, multi-sensor, multi-asset,
 and degradation/failure-relevant.
 
+## Confidentiality and grounding (Phase 6 assistant)
+
+The operational assistant (Phase 6) is built so it could later run against **real, confidential
+ESP/SCADA data** without exposing it:
+
+- **Local LLM only - no external API calls.** The assistant runs against a local
+  [Ollama](https://ollama.com) server on your own machine. No telemetry, questions, or answers
+  are ever sent to a third-party LLM provider or any service outside your network.
+- **Every answer is grounded with citations.** The LLM only ever explains evidence retrieved
+  by Python first - it never invents lap times, anomalies, or events. Every factual claim in an
+  answer must cite the exact lap number and value it came from (`(Lap N: value)`), and
+  `validate_citations()` checks at the code level that those citations actually exist in the
+  retrieved evidence, rather than just trusting the model to comply with the prompt.
+- **No grounding evidence, no LLM call.** If a question can't be parsed into a driver and lap
+  number, or no matching data is found, the assistant says so directly and the LLM is never
+  invoked at all.
+
+See [Phase 6 in Status](#status-phases-1-6-done-plus-a-v1-operational-replay) and
+[Current limitations](#current-limitations) below for the honest gaps in these guardrails.
+
 ## Screenshots
 
 **Race Detail (Phase 1-2)** - tyre degradation and the speed/throttle/brake telemetry traces:
