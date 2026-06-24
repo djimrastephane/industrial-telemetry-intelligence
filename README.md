@@ -29,8 +29,52 @@ ESP/SCADA data** without exposing it:
   number, or no matching data is found, the assistant says so directly and the LLM is never
   invoked at all.
 
-See [Phase 6 in Status](#status-phases-1-8-done) and
+See [Phase 6 in Status](#status-phases-1-9-done) and
 [Current limitations](#current-limitations) below for the honest gaps in these guardrails.
+
+## Operational Context Layer
+
+Telemetry alone is insufficient for decision support. The same drop in speed can mean tyre
+degradation, a yellow flag, or an unexplained anomaly - the difference is entirely in the
+**operational context**, not the speed trace itself. Industrial SCADA systems combine sensor
+measurements with operating conditions before assessing equipment health; Phase 9
+(`src/context_engine.py`) adds that same layer to this platform:
+
+```
+Telemetry  +  Operational Context  ->  Health Assessment  ->  Recommendation
+```
+
+The current (Formula 1) implementation of "operational context" is:
+
+- **Weather** - air/track temperature, humidity, wind speed/direction, rainfall, pressure
+  (FastF1 `session.weather_data`).
+- **Tyre state** - compound, tyre age, fresh-tyre flag, stint (FastF1 `session.laps`).
+- **Track status** - green/yellow/safety car/VSC/red flag, derived from FastF1's per-lap
+  `TrackStatus` codes.
+- **Race events** - pit in/out and race control messages (flags, incidents), from FastF1
+  `session.race_control_messages`.
+
+The Context Engine's five functions (`load_context`, `align_context_to_session`,
+`get_context_at_timestamp`, `calculate_context_changes`, `generate_context_summary`) are written
+to be domain-independent: nothing in their logic assumes "weather". A future ESP/SCADA
+implementation would point them at different sources with this kind of mapping, without
+changing any other module in the pipeline:
+
+| Formula 1 (current demonstration) | Future ESP/SCADA implementation |
+|---|---|
+| Air Temperature | Reservoir Pressure |
+| Track Temperature | Wellhead Temperature |
+| Wind (speed/direction) | Choke Setting |
+| Humidity | Operating Envelope |
+| Rainfall | Operational Constraints |
+| Tyre compound / age | Equipment mode / run-to-failure interval |
+| Track status (flags, safety car) | Equipment alarm state |
+| Race control messages | SCADA alarm/event log |
+
+The objective is **not** variable equality - air temperature isn't "the same thing" as
+reservoir pressure. The objective is demonstrating that telemetry requires contextual
+interpretation, on an architecture that doesn't need to be rewritten when the context source
+changes.
 
 ## Screenshots
 
@@ -120,6 +164,33 @@ is built, run on real data, and verified before the next one starts — see
   consistency) the same way `baseline_models.py` tracks per-driver baselines (average lap time,
   consistency score, fastest lap).
 
+## Related work
+
+[IAmTomShaw/f1-race-replay](https://github.com/IAmTomShaw/f1-race-replay) also combines FastF1
+and the [Arcade](https://api.arcade.academy/en/latest/) library to render F1 telemetry as a 2D
+replay - the same general pairing this project's `app/arcade_replay.py` uses. It's a much larger,
+F1-fan-facing project in its own right (leaderboard, simulated Safety Car, pause/rewind/speed
+playback controls, GUI/CLI session menus, qualifying-session support, a telemetry streaming
+server, and a custom "Pit Wall" insight-window framework).
+
+This project was built independently, with a different scope and architecture, and shares no
+code, structure, or text with it:
+
+- **Scope**: the Arcade replay here is one small piece (Phases 8-9) of a much larger industrial-
+  analytics pipeline (baselines, anomaly detection, degradation, predictive ML, an LLM-grounded
+  assistant, decision support); in f1-race-replay, the replay *is* the whole project, with a much
+  richer feature set as a replay tool specifically (no analytics pipeline around it).
+- **Frame architecture**: this project computes each displayed frame on demand via a binary
+  search over per-driver telemetry (`replay_data.get_frame_at_time`); f1-race-replay precomputes
+  a full frame list at a fixed 25 FPS via multiprocessing, cached to disk.
+- **Context layer**: this project's Phase 9 context engine (`src/context_engine.py`) is written
+  to be domain-independent, so the same functions could later read ESP/SCADA data instead of F1
+  weather/tyre/track-status; f1-race-replay's weather/track-status handling is F1-specific UI
+  componentry, not abstracted for reuse outside F1.
+- **Licensing**: f1-race-replay's README states an MIT license, but as of this writing the repo
+  has no actual `LICENSE` file - worth knowing if you intend to reuse code from it, independent
+  of this project.
+
 ## Skills demonstrated
 
 - Real-world API ingestion and local caching (FastF1 → parquet)
@@ -148,10 +219,11 @@ industrial-telemetry-intelligence/
     operational_assistant.py # Phase 6: parse question -> retrieve evidence -> local LLM
     decision_support.py     # Phase 7: degradation forecast -> pit/maintenance recommendation
     replay_data.py          # pure geometry/interpolation helpers for the Arcade replay
+    context_engine.py       # Phase 9: domain-independent operational context engine
     visualisation.py        # shared Plotly figures
   app/
-    streamlit_app.py        # dashboard: Race Detail + Season + Fleet + Predictive + Assistant + Decision tabs
-    arcade_replay.py         # standalone Arcade window: multi-driver cars + live HUD on the track
+    streamlit_app.py        # dashboard: Race Detail + Season + Fleet + Predictive + Assistant + Decision + Context tabs
+    arcade_replay.py         # standalone Arcade window: multi-driver cars + live HUD + context readout
   notebooks/
     01_data_exploration.ipynb
     02_baseline_analysis.ipynb
@@ -166,6 +238,7 @@ industrial-telemetry-intelligence/
     test_operational_assistant.py
     test_degradation_analysis.py
     test_decision_support.py
+    test_context_engine.py
   data/                     # raw/processed/cache - gitignored, regenerated locally
   outputs/                  # figures/reports - gitignored, regenerated locally
 ```
@@ -204,7 +277,8 @@ ollama pull qwen2.5:7b-instruct     # default model (src/config.py:OLLAMA_MODEL)
    python -m src.data_ingestion
    ```
 
-   This writes `data/processed/laps.parquet`, `weather.parquet`, and `telemetry.parquet`.
+   This writes `data/processed/laps.parquet`, `weather.parquet`, `telemetry.parquet`, and
+   `race_control.parquet` (Phase 9's operational context sources).
 
 2. **Inspect cleaning, features, and baselines** (optional, sanity check):
 
@@ -258,19 +332,32 @@ ollama pull qwen2.5:7b-instruct     # default model (src/config.py:OLLAMA_MODEL)
    python -m src.decision_support
    ```
 
-8. **Run the dashboard**:
+8. **Inspect the operational context engine** (optional, sanity check - uses step 1's data,
+   no new download):
+
+   ```bash
+   python -m src.context_engine
+   ```
+
+   Prints one driver's aligned context, real-sample-to-real-sample changes, and the
+   rule-based summary at a sample moment in the race.
+
+9. **Run the dashboard**:
 
    ```bash
    streamlit run app/streamlit_app.py
    ```
 
-   The dashboard has six tabs: **Race Detail** (Phase 1-2, needs step 1's data),
+   The dashboard has seven tabs: **Race Detail** (Phase 1-2, needs step 1's data),
    **Season Monitoring** (Phase 3, needs step 3's data), **Fleet Monitoring**
    (Phase 4, needs step 4's data), **Predictive Analytics** (Phase 5, needs step 1's data),
-   **Operational Assistant** (Phase 6, needs step 1's data and Ollama running), and
-   **Decision Support** (Phase 7, needs step 1's data).
+   **Operational Assistant** (Phase 6, needs step 1's data and Ollama running),
+   **Decision Support** (Phase 7, needs step 1's data), and **Operational Context**
+   (Phase 9, needs step 1's data).
 
-9. **Run the Arcade replay** (separate native window, needs step 1's data):
+10. **Run the Arcade replay** (separate native window, needs step 1's data; the gauge panel
+    now also shows a live Operational Context readout - tyre, track status, air/track temp -
+    for the focus driver):
 
    ```bash
    python app/arcade_replay.py --drivers VER,LEC,NOR
@@ -283,10 +370,10 @@ ollama pull qwen2.5:7b-instruct     # default model (src/config.py:OLLAMA_MODEL)
    start/finish marker, and an instrument cluster (speed dial, throttle dial, brake lamp, gear
    box) for the first driver listed (the "focus" driver).
 
-10. **Run the notebooks** (`notebooks/01_data_exploration.ipynb`, `02_baseline_analysis.ipynb`,
+11. **Run the notebooks** (`notebooks/01_data_exploration.ipynb`, `02_baseline_analysis.ipynb`,
     `03_anomaly_detection.ipynb`) for the same analysis in a more exploratory format.
 
-11. **Run tests**:
+12. **Run tests**:
 
    ```bash
    pytest tests/ -v
@@ -295,7 +382,7 @@ ollama pull qwen2.5:7b-instruct     # default model (src/config.py:OLLAMA_MODEL)
    Tests use synthetic fixtures and a temp directory — they never overwrite the real
    downloaded data in `data/processed/`.
 
-## Status: Phases 1-8 done
+## Status: Phases 1-9 done
 
 Dataset so far: 2024 Bahrain Grand Prix Race session (all 20 drivers' lap/weather/telemetry
 data), the full 2024 season (all 24 race rounds, ~26,600 laps), and Bahrain Grand Prix every
@@ -453,6 +540,50 @@ Bahrain race session, so the Race Detail tab's driver selector, telemetry compar
 Arcade replay all cover the full grid. `src/config.py:COMPARISON_DRIVERS` only sets the
 *default pre-selected pair/driver* shown on load.
 
+- An Operational Context Engine (`src/context_engine.py`) that moves the platform from
+  `Telemetry -> Health Assessment -> Recommendation` to
+  `Telemetry + Operational Context -> Health Assessment -> Recommendation`, by loading and
+  aligning three FastF1 sources - weather, per-lap tyre/track-status, and race control messages
+  - to telemetry's own session-elapsed clock (`SessionTime`/`LapStartTimeSeconds`), not the
+  per-lap-relative clock the replay uses for animation. *(Phase 9)*
+- Ingestion now also captures `LapStartTime`, `PitInTime`/`PitOutTime`, `FreshTyre` (added to
+  `laps.parquet`) and race control messages (new `race_control.parquet`, with `Time` converted
+  to session-elapsed `SessionTimeSeconds` via `session.t0_date` at ingestion time, since that
+  conversion needs the live FastF1 session object). *(Phase 9)*
+- Five domain-independent functions - `load_context`, `align_context_to_session`,
+  `get_context_at_timestamp`, `calculate_context_changes`, `generate_context_summary` - none of
+  which reference "weather" by name in their logic; only the column lists and interpretation
+  sentences are F1-specific. See [Operational Context Layer](#operational-context-layer) above
+  for the documented ESP/SCADA mapping. *(Phase 9)*
+- Track status is read from FastF1's per-lap `TrackStatus` code string (one digit per status
+  raised during that lap, in order) by taking the *last* digit - the status in effect when the
+  lap ended - and mapping it to a label (Green/Yellow/Safety Car/Virtual Safety Car/VSC
+  Ending/Red Flag). *(Phase 9)*
+- Trend arrows compare two **real** consecutive samples (the previous and current actual
+  weather reading, or the previous and current actual lap's tyre state) rather than two
+  interpolated values a fraction of a second apart - this is what keeps the arrows from
+  flickering on interpolation noise between sparse weather samples (~1/minute). *(Phase 9)*
+- Three deterministic, context-only explanation rules, validated against the spec's own
+  examples: a significant track status (Yellow/SC/VSC/Red Flag) always explains a lap-time
+  increase ("Performance reduction expected due to track conditions"); high tyre age
+  (`>= src/config.py:CONTEXT_TYRE_LIFE_HIGH_THRESHOLD`, default 15 laps) on a green track
+  explains lower-than-expected speed ("Observed behaviour is consistent with tyre
+  degradation"); low tyre age on a green track with an unexplained speed anomaly produces a Low
+  confidence "Potential performance anomaly requiring further investigation" instead. *(Phase 9)*
+- An "Operational Context" dashboard tab: a driver/lap selector, the context card (tyre, track
+  status, air/track temp, recent event), context trends (current/previous/trend arrow for track
+  temperature, wind speed, tyre life), and an interactive "what did telemetry show?" selector
+  that drives `generate_context_summary()`'s confidence/explanation live, with no logic in the
+  dashboard file itself - it only calls `context_engine.py`. *(Phase 9)*
+- The Arcade replay's gauge panel (Phase 8) also shows a live one-line Operational Context
+  readout (tyre, track status, air/track temp) for the focus driver, updated every frame by
+  converting the replay's lap-relative clock back to absolute session time via that lap's
+  `LapStartTimeSeconds` offset. *(Phase 9)*
+- 24 new tests for `context_engine.py` (alignment, interpolation, track-status/tyre-change/
+  race-control-event detection, missing-value handling, and the three example
+  explanation/confidence scenarios from the spec), plus 2 new ingestion tests for the optional
+  race-control argument to `save_processed()`; 109 tests total. *(Phase 9)*
+
 ## Current limitations
 
 - The z-score anomaly flag treats every lap as independent (i.i.d.) — it does not account for
@@ -536,6 +667,27 @@ Arcade replay all cover the full grid. `src/config.py:COMPARISON_DRIVERS` only s
   driver's racing line only; other drivers' slightly different lines are not used to redraw the
   track outline (drawing once stays simple, and FastF1 has no real track-width data to draw a
   more authoritative outline from anyway).
+- Phase 9's weather-change thresholds (`WEATHER_CHANGE_THRESHOLDS`) and tyre-age explanation
+  threshold (`CONTEXT_TYRE_LIFE_HIGH_THRESHOLD`, default 15 laps) are fixed constants, not
+  derived from this race's or this track's own variance - simple and transparent, per the
+  project's "don't invent data-fitted thresholds" rule, but they mean a "moderate" track
+  temperature change at a hot track (e.g. Bahrain) might be unremarkable at a cooler one.
+- The `generate_context_summary()` explanation cascade is intentionally small and ordered
+  (significant track status, then high tyre age, then "no obvious explanation"): it covers the
+  three scenarios in the Phase 9 spec, but a telemetry effect with multiple plausible competing
+  explanations (e.g. a track-temperature spike *and* high tyre age at the same moment) only
+  reports the first rule in that order, not a ranked list of all contributing factors.
+- Race control message matching uses a fixed lookback window
+  (`CONTEXT_RECENT_EVENT_WINDOW_SECONDS`, default 120s) and returns at most one (the most
+  recent) message - a driver's "Recent Event" can miss an earlier, possibly more relevant
+  message in the same window, and there's no severity ranking across message categories
+  (Flag/CarEvent/Other/Drs all weigh equally as "most recent").
+- Track status is derived from the *last* digit of FastF1's per-lap `TrackStatus` code string,
+  which is the status in effect when the lap ended - a lap with a brief mid-lap yellow that
+  cleared before the lap ended will show as Green, not Yellow, for that lap.
+- The Arcade replay's context readout is single-driver (the focus driver only), consistent with
+  its existing single-focus gauge panel - it doesn't show context for every car on track
+  simultaneously.
 
 ## Roadmap
 
@@ -590,6 +742,20 @@ Each phase is built and verified end-to-end on real data before the next one sta
   detail on the one currently selected. *Success criteria met: multiple assets visible
   simultaneously on one replay, reusing the existing single-driver geometry/clamping logic
   rather than rebuilding it, and unit-tested without needing a display.*
+- **Phase 9 — Operational Context Layer** ✅ done. Moves the platform from
+  `Telemetry -> Health Assessment -> Recommendation` to
+  `Telemetry + Operational Context -> Health Assessment -> Recommendation` via a
+  domain-independent Context Engine (`src/context_engine.py`) that loads, aligns, and
+  summarizes FastF1 weather, tyre/track-status, and race control data against telemetry's own
+  session-elapsed clock. No new model: every output is a real value, a linear interpolation
+  between two real samples, or a deterministic rule. Industrial analogy: the operating-
+  conditions layer SCADA systems combine with sensor readings before assessing equipment
+  health. *Success criteria met: an Operational Context panel (dashboard tab + Arcade replay
+  readout) updating live, context trends with trend arrows, rule-based context-aware
+  explanations validated against all three of the spec's worked examples (tyre degradation,
+  track-condition, unexplained anomaly), and an architecture documented (see "Operational
+  Context Layer" above) to support replacing FastF1 weather with ESP/SCADA operating
+  conditions without changing any other module.*
 
 ## Architecture rule
 

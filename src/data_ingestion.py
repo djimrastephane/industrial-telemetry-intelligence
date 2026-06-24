@@ -27,7 +27,9 @@ def load_session(
 
 
 def get_laps_df(session: fastf1.core.Session) -> pd.DataFrame:
-    """Lap times, sector times, tyre compound, and tyre life."""
+    """Lap times, sector times, tyre compound/life, and per-lap operational
+    context (track status, pit in/out, lap start time) used by Phase 9's
+    context engine alongside the existing baseline/degradation/anomaly use."""
     columns = [
         "Driver",
         "Team",
@@ -38,13 +40,17 @@ def get_laps_df(session: fastf1.core.Session) -> pd.DataFrame:
         "Sector3Time",
         "Compound",
         "TyreLife",
+        "FreshTyre",
         "Stint",
         "TrackStatus",
         "IsAccurate",
+        "LapStartTime",
+        "PitInTime",
+        "PitOutTime",
     ]
     laps = session.laps.loc[:, columns].copy()
 
-    for col in ["LapTime", "Sector1Time", "Sector2Time", "Sector3Time"]:
+    for col in ["LapTime", "Sector1Time", "Sector2Time", "Sector3Time", "LapStartTime"]:
         laps[f"{col}Seconds"] = laps[col].dt.total_seconds()
 
     return laps
@@ -52,6 +58,17 @@ def get_laps_df(session: fastf1.core.Session) -> pd.DataFrame:
 
 def get_weather_df(session: fastf1.core.Session) -> pd.DataFrame:
     return session.weather_data.copy()
+
+
+def get_race_control_df(session: fastf1.core.Session) -> pd.DataFrame:
+    """Race control messages (flags, safety car, incidents), with their
+    wall-clock `Time` converted to session-elapsed seconds (`SessionTimeSeconds`)
+    via `session.t0_date` - the same clock as `LapStartTimeSeconds` and
+    telemetry's `SessionTime`, so Phase 9's context engine can align all three
+    without needing the live FastF1 session object again."""
+    race_control = session.race_control_messages.copy()
+    race_control["SessionTimeSeconds"] = (race_control["Time"] - session.t0_date).dt.total_seconds()
+    return race_control
 
 
 def get_telemetry_df(
@@ -205,23 +222,27 @@ def save_processed(
     laps_df: pd.DataFrame,
     weather_df: pd.DataFrame,
     telemetry_df: pd.DataFrame,
+    race_control_df: pd.DataFrame | None = None,
 ) -> None:
     laps_df.to_parquet(config.LAPS_FILE, index=False)
     weather_df.to_parquet(config.WEATHER_FILE, index=False)
     telemetry_df.to_parquet(config.TELEMETRY_FILE, index=False)
+    if race_control_df is not None:
+        race_control_df.to_parquet(config.RACE_CONTROL_FILE, index=False)
 
 
 def save_season_laps(season_laps_df: pd.DataFrame) -> None:
     season_laps_df.to_parquet(config.SEASON_LAPS_FILE, index=False)
 
 
-def run_ingestion() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def run_ingestion() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     session = load_session()
     laps_df = get_laps_df(session)
     weather_df = get_weather_df(session)
     telemetry_df = get_telemetry_df(session)
-    save_processed(laps_df, weather_df, telemetry_df)
-    return laps_df, weather_df, telemetry_df
+    race_control_df = get_race_control_df(session)
+    save_processed(laps_df, weather_df, telemetry_df, race_control_df)
+    return laps_df, weather_df, telemetry_df, race_control_df
 
 
 def run_season_ingestion(
@@ -258,7 +279,8 @@ if __name__ == "__main__":
         fleet_laps = run_fleet_ingestion()
         print(f"Fleet laps: {fleet_laps.shape}")
     else:
-        laps, weather, telemetry = run_ingestion()
+        laps, weather, telemetry, race_control = run_ingestion()
         print(f"Laps: {laps.shape}")
         print(f"Weather: {weather.shape}")
         print(f"Telemetry: {telemetry.shape}")
+        print(f"Race control messages: {race_control.shape}")

@@ -44,23 +44,50 @@ def sample_telemetry_df():
     )
 
 
+@pytest.fixture
+def sample_race_control_df():
+    return pd.DataFrame(
+        {
+            "Category": ["Flag"],
+            "Message": ["GREEN LIGHT - PIT EXIT OPEN"],
+            "SessionTimeSeconds": [120.0],
+        }
+    )
+
+
 def test_save_processed_round_trip(
-    tmp_path, monkeypatch, sample_laps_df, sample_weather_df, sample_telemetry_df
+    tmp_path, monkeypatch, sample_laps_df, sample_weather_df, sample_telemetry_df, sample_race_control_df
 ):
     # Redirect to a temp directory so the test never overwrites real processed data.
+    monkeypatch.setattr(config, "LAPS_FILE", tmp_path / "laps.parquet")
+    monkeypatch.setattr(config, "WEATHER_FILE", tmp_path / "weather.parquet")
+    monkeypatch.setattr(config, "TELEMETRY_FILE", tmp_path / "telemetry.parquet")
+    monkeypatch.setattr(config, "RACE_CONTROL_FILE", tmp_path / "race_control.parquet")
+
+    save_processed(sample_laps_df, sample_weather_df, sample_telemetry_df, sample_race_control_df)
+
+    loaded_laps = pd.read_parquet(config.LAPS_FILE)
+    loaded_weather = pd.read_parquet(config.WEATHER_FILE)
+    loaded_telemetry = pd.read_parquet(config.TELEMETRY_FILE)
+    loaded_race_control = pd.read_parquet(config.RACE_CONTROL_FILE)
+
+    pd.testing.assert_frame_equal(loaded_laps, sample_laps_df)
+    pd.testing.assert_frame_equal(loaded_weather, sample_weather_df)
+    pd.testing.assert_frame_equal(loaded_telemetry, sample_telemetry_df)
+    pd.testing.assert_frame_equal(loaded_race_control, sample_race_control_df)
+
+
+def test_save_processed_without_race_control_is_optional(
+    tmp_path, monkeypatch, sample_laps_df, sample_weather_df, sample_telemetry_df
+):
     monkeypatch.setattr(config, "LAPS_FILE", tmp_path / "laps.parquet")
     monkeypatch.setattr(config, "WEATHER_FILE", tmp_path / "weather.parquet")
     monkeypatch.setattr(config, "TELEMETRY_FILE", tmp_path / "telemetry.parquet")
 
     save_processed(sample_laps_df, sample_weather_df, sample_telemetry_df)
 
-    loaded_laps = pd.read_parquet(config.LAPS_FILE)
-    loaded_weather = pd.read_parquet(config.WEATHER_FILE)
-    loaded_telemetry = pd.read_parquet(config.TELEMETRY_FILE)
-
-    pd.testing.assert_frame_equal(loaded_laps, sample_laps_df)
-    pd.testing.assert_frame_equal(loaded_weather, sample_weather_df)
-    pd.testing.assert_frame_equal(loaded_telemetry, sample_telemetry_df)
+    assert (tmp_path / "laps.parquet").exists()
+    assert not (tmp_path / "race_control.parquet").exists()
 
 
 def test_processed_dir_is_created():

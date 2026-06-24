@@ -19,6 +19,16 @@ from src.baseline_models import (
     degradation_summary,
     fastest_lap_per_driver,
 )
+from src.context_engine import (
+    OBSERVED_LAPTIME_INCREASE,
+    OBSERVED_LOW_SPEED,
+    OBSERVED_SPEED_ANOMALY,
+    align_context_to_session,
+    calculate_context_changes,
+    generate_context_summary,
+    get_context_at_timestamp,
+    load_context,
+)
 from src.data_cleaning import load_and_clean_all, load_and_clean_fleet, load_and_clean_season
 from src.decision_support import build_recommendations_table
 from src.fleet_analysis import (
@@ -73,11 +83,12 @@ st.markdown(
     """
 )
 
-race_tab, season_tab, fleet_tab, predictive_tab, assistant_tab, decision_tab = st.tabs(
+race_tab, season_tab, fleet_tab, predictive_tab, assistant_tab, decision_tab, context_tab = st.tabs(
     [
         "Race Detail (Phase 1-2)", "Season Monitoring (Phase 3)",
         "Fleet Monitoring (Phase 4)", "Predictive Analytics (Phase 5)",
         "Operational Assistant (Phase 6)", "Decision Support (Phase 7)",
+        "Operational Context (Phase 9)",
     ]
 )
 
@@ -642,5 +653,135 @@ with decision_tab:
           2024 Bahrain race), the model's projected crossing lap lands a few laps after their
           actual pit lap - consistent with teams pitting proactively before a hard performance
           cliff, not reactively after one.
+        """
+    )
+
+with context_tab:
+    st.subheader("Data Loading Status")
+
+    required_files = [config.LAPS_FILE, config.WEATHER_FILE, config.TELEMETRY_FILE]
+    missing = [f for f in required_files if not f.exists()]
+    if missing:
+        st.error(
+            "Processed data not found. Run `python -m src.data_ingestion` first to download "
+            f"and cache the {config.SEASON_YEAR} {config.EVENT_NAME} ({config.SESSION_NAME}) session."
+        )
+        st.stop()
+
+    st.write(
+        "Telemetry alone doesn't explain *why* it changed. This tab pairs the existing "
+        "telemetry with the operational context behind it - tyre state, track status, "
+        "weather, and race control events - all read through `src/context_engine.py`. "
+        "No part of this logic lives in this dashboard file; it only calls that module."
+    )
+
+    context_data = align_context_to_session(load_context())
+    context_laps_df = context_data["laps"]
+
+    st.divider()
+    st.subheader("Select a Moment")
+
+    context_drivers = sorted(context_laps_df["Driver"].unique())
+    default_context_driver = (
+        config.COMPARISON_DRIVERS[0] if config.COMPARISON_DRIVERS[0] in context_drivers else context_drivers[0]
+    )
+    col1, col2 = st.columns(2)
+    with col1:
+        context_driver = st.selectbox(
+            "Driver", context_drivers, index=context_drivers.index(default_context_driver), key="context_driver"
+        )
+    driver_lap_rows = context_laps_df[context_laps_df["Driver"] == context_driver].sort_values("LapNumber")
+    available_laps = driver_lap_rows["LapNumber"].dropna().astype(int).tolist()
+    with col2:
+        context_lap = st.select_slider("Lap", options=available_laps, value=available_laps[len(available_laps) // 2])
+
+    session_time_seconds = float(
+        driver_lap_rows.loc[driver_lap_rows["LapNumber"] == context_lap, "LapStartTimeSeconds"].iloc[0]
+    )
+
+    context_now = get_context_at_timestamp(context_data, session_time_seconds, context_driver)
+    context_changes = calculate_context_changes(context_data, session_time_seconds, context_driver)
+
+    st.divider()
+    st.subheader("Operational Context")
+
+    card_col1, card_col2, card_col3 = st.columns(3)
+    with card_col1:
+        st.metric("Tyre", f"{context_now.get('Compound', 'Unknown')}")
+        st.metric("Tyre Age", f"{context_now.get('TyreLife', 'Unknown')} laps")
+    with card_col2:
+        st.metric("Track", context_now.get("TrackStatus", "Unknown"))
+        st.metric("Air Temp", f"{context_now.get('AirTemp', float('nan')):.1f}°C" if "AirTemp" in context_now else "—")
+    with card_col3:
+        st.metric("Track Temp", f"{context_now.get('TrackTemp', float('nan')):.1f}°C" if "TrackTemp" in context_now else "—")
+        st.metric("Recent Event", context_now.get("RecentEvent", "No significant events"))
+
+    st.divider()
+    st.subheader("Context Trends")
+
+    trend_cols = st.columns(3)
+    trend_targets = [
+        ("TrackTemp", "Track Temperature", "°C"),
+        ("WindSpeed", "Wind Speed", " km/h"),
+        ("TyreLife", "Tyre Life", " laps"),
+    ]
+    for column, (variable, label, unit) in zip(trend_cols, trend_targets):
+        change = context_changes.get(variable)
+        with column:
+            if change is None:
+                st.write(f"**{label}**: not enough history yet")
+            else:
+                st.write(
+                    f"**{label}**  \n"
+                    f"Current: {change['current']:.1f}{unit}  \n"
+                    f"Previous: {change['previous']:.1f}{unit}  \n"
+                    f"Trend: {change['trend']}"
+                )
+
+    st.divider()
+    st.subheader("Context-Aware Explanation")
+    st.write(
+        "Pick what telemetry appeared to show at this moment; the explanation below is "
+        "generated by `generate_context_summary()` from the real context above, not inferred "
+        "by an LLM or model."
+    )
+    observed_effect_label = st.selectbox(
+        "What did telemetry show?",
+        ["No specific signal", "Lower speed than expected", "Lap time increased", "Speed anomaly detected"],
+        key="observed_effect",
+    )
+    observed_effect_map = {
+        "No specific signal": None,
+        "Lower speed than expected": OBSERVED_LOW_SPEED,
+        "Lap time increased": OBSERVED_LAPTIME_INCREASE,
+        "Speed anomaly detected": OBSERVED_SPEED_ANOMALY,
+    }
+    context_summary = generate_context_summary(
+        context_now, context_changes, observed_effect_map[observed_effect_label]
+    )
+
+    status_color = {"green": ":green", "amber": ":orange", "red": ":red"}[context_summary["color"]]
+    st.markdown(f"**Context Status:** {status_color}[{context_summary['status']}]")
+    if context_summary["confidence"] is not None:
+        st.markdown(f"**Context Confidence:** {context_summary['confidence']}")
+    for sentence in context_summary["interpretation"]:
+        st.write(f"- {sentence}")
+
+    st.divider()
+    st.subheader("Why Operational Context Matters")
+    st.markdown(
+        """
+        - **Telemetry alone is insufficient for decision support.** The same drop in speed can
+          mean tyre degradation, a yellow flag, or an unexplained anomaly - the difference is
+          entirely in the operational context, not the speed trace itself.
+        - **This panel adds no new model.** Every value is read directly from FastF1 data
+          (weather, lap/tyre/track-status, race control messages) already cached by Phase 1's
+          ingestion, or linearly interpolated/diffed between two real samples - see
+          `src/context_engine.py`.
+        - **The Context Engine is domain-independent by construction.** A future ESP/SCADA
+          implementation would point the same five functions (`load_context`,
+          `align_context_to_session`, `get_context_at_timestamp`, `calculate_context_changes`,
+          `generate_context_summary`) at different data sources; no other module in this
+          dashboard or pipeline would need to change.
         """
     )

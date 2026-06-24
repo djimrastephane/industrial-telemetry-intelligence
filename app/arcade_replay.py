@@ -28,6 +28,7 @@ import arcade
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.config import REPLAY_DRIVERS
+from src.context_engine import align_context_to_session, get_context_at_timestamp, load_context
 from src.data_cleaning import load_and_clean_all
 from src.replay_data import (
     checker_line_segments,
@@ -77,7 +78,7 @@ LEGEND_Y = TRACK_AREA_HEIGHT - 20  # just below the divider, inside the track vi
 
 
 class ReplayWindow(arcade.Window):
-    def __init__(self, lap_dfs: dict, drivers: list[str]):
+    def __init__(self, lap_dfs: dict, drivers: list[str], laps_df=None):
         title = "Industrial Telemetry Replay - " + ", ".join(drivers)
         super().__init__(SCREEN_WIDTH, SCREEN_HEIGHT, title)
         arcade.set_background_color(arcade.color.DARK_SLATE_GRAY)
@@ -88,6 +89,25 @@ class ReplayWindow(arcade.Window):
         self.bounds = multi_track_bounds(lap_dfs)
         self.duration = multi_lap_duration_seconds(lap_dfs)
         self.elapsed = 0.0
+
+        # Phase 9: live Operational Context readout for the focus driver.
+        # The replay's own clock is lap-relative (t=0 at the fastest lap's
+        # start); the context engine needs absolute session-elapsed time, so
+        # `self.operational_context_time_offset` is that lap's LapStartTimeSeconds. If
+        # context can't be loaded/matched, the readout is simply skipped.
+        self.operational_context = None
+        self.operational_context_time_offset = 0.0
+        if laps_df is not None:
+            try:
+                self.operational_context = align_context_to_session(load_context())
+                focus_lap_number = lap_dfs[self.focus_driver]["LapNumber"].iloc[0]
+                offset_rows = laps_df[
+                    (laps_df["Driver"] == self.focus_driver) & (laps_df["LapNumber"] == focus_lap_number)
+                ]
+                if not offset_rows.empty:
+                    self.operational_context_time_offset = float(offset_rows["LapStartTimeSeconds"].iloc[0])
+            except (FileNotFoundError, KeyError):
+                self.operational_context = None
 
         reference_lap = lap_dfs[self.focus_driver]
         centerline = [
@@ -159,6 +179,24 @@ class ReplayWindow(arcade.Window):
         self._draw_dial(THROTTLE_GAUGE_CENTER, frame["Throttle"], 0, THROTTLE_MAX_PCT, "THROTTLE", "%")
         self._draw_brake_lamp(BRAKE_LAMP_CENTER, frame["Brake"])
         self._draw_gear_box(GEAR_BOX_CENTER, frame["Gear"])
+        self._draw_context_readout()
+
+    def _draw_context_readout(self):
+        if self.operational_context is None:
+            return
+        session_time = self.elapsed + self.operational_context_time_offset
+        context_now = get_context_at_timestamp(self.operational_context, session_time, self.focus_driver)
+
+        tyre = f"{context_now.get('Compound', 'Unknown')} ({context_now.get('TyreLife', '?')} laps)"
+        track = context_now.get("TrackStatus", "Unknown")
+        air_temp = f"{context_now['AirTemp']:.1f}C" if "AirTemp" in context_now else "—"
+        track_temp = f"{context_now['TrackTemp']:.1f}C" if "TrackTemp" in context_now else "—"
+
+        readout = f"Tyre: {tyre}   Track: {track}   Air: {air_temp}   Track Temp: {track_temp}"
+        arcade.draw_text(
+            readout, SCREEN_WIDTH / 2, SCREEN_HEIGHT - 50, arcade.color.LIGHT_GRAY, 12,
+            anchor_x="center",
+        )
 
     @staticmethod
     def _draw_dial(center, value, value_min, value_max, label, unit):
@@ -211,7 +249,7 @@ def main():
     args = parser.parse_args()
     requested_drivers = [d.strip().upper() for d in args.drivers.split(",") if d.strip()]
 
-    _, _, telemetry_df = load_and_clean_all()
+    laps_df, _, telemetry_df = load_and_clean_all()
     lap_dfs = load_multi_driver_lap_telemetry(telemetry_df, requested_drivers)
     missing = [d for d in requested_drivers if d not in lap_dfs]
     if missing:
@@ -223,7 +261,7 @@ def main():
         )
 
     drivers = [d for d in requested_drivers if d in lap_dfs]
-    ReplayWindow(lap_dfs, drivers)
+    ReplayWindow(lap_dfs, drivers, laps_df=laps_df)
     arcade.run()
 
 

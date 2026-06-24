@@ -29,6 +29,7 @@ COMPARISON_DRIVERS = ["VER", "LEC"]
 LAPS_FILE = PROCESSED_DIR / "laps.parquet"
 WEATHER_FILE = PROCESSED_DIR / "weather.parquet"
 TELEMETRY_FILE = PROCESSED_DIR / "telemetry.parquet"
+RACE_CONTROL_FILE = PROCESSED_DIR / "race_control.parquet"
 
 ANOMALY_ZSCORE_THRESHOLD = 2.5
 
@@ -58,3 +59,13 @@ DECISION_MAX_HORIZON_LAPS = 10
 # Phase 8: multi-driver Arcade replay. Default set of drivers shown together
 # on track; telemetry is cached for the full grid, so any 3-letter code works.
 REPLAY_DRIVERS = ["VER", "LEC", "NOR"]
+
+# Phase 9: operational context engine. How far back (in session-elapsed
+# seconds) a race control message still counts as a "recent event" at a
+# given moment - a simple fixed window, not derived from the data.
+CONTEXT_RECENT_EVENT_WINDOW_SECONDS = 120.0
+
+# Tyre age (laps) above which "lower than expected speed" is attributed to
+# tyre degradation rather than flagged as an unexplained anomaly. A
+# conservative, explicitly not-fitted constant - see README limitations.
+CONTEXT_TYRE_LIFE_HIGH_THRESHOLD = 15
