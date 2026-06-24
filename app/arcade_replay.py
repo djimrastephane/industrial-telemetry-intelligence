@@ -63,7 +63,8 @@ BRAKE_LAMP_RADIUS = 40
 GEAR_BOX_HALF_SIZE = 40
 
 # Distinct colours cycled across drivers; the focus driver (gauge panel) is
-# always the first one passed on the command line.
+# always the first one passed on the command line. 20 entries covers the
+# full grid without repeating a colour.
 CAR_COLORS = [
     arcade.color.RED,
     arcade.color.YELLOW,
@@ -72,9 +73,25 @@ CAR_COLORS = [
     arcade.color.ORANGE,
     arcade.color.VIOLET,
     arcade.color.WHITE,
+    arcade.color.PINK,
+    arcade.color.SKY_BLUE,
+    arcade.color.GOLD,
+    arcade.color.SPRING_GREEN,
+    arcade.color.SALMON,
+    arcade.color.LAVENDER,
+    arcade.color.KHAKI,
+    arcade.color.TURQUOISE,
+    arcade.color.CORAL,
+    arcade.color.SILVER,
+    arcade.color.YELLOW_GREEN,
+    arcade.color.LIGHT_SALMON,
+    arcade.color.PALE_GOLDENROD,
 ]
 
-LEGEND_Y = TRACK_AREA_HEIGHT - 20  # just below the divider, inside the track view
+LEGEND_TOP_Y = TRACK_AREA_HEIGHT - 20  # just below the divider, inside the track view
+LEGEND_ROW_HEIGHT = 22
+LEGEND_COLUMNS = 5
+LEGEND_COLUMN_WIDTH = SCREEN_WIDTH // LEGEND_COLUMNS
 
 
 class ReplayWindow(arcade.Window):
@@ -154,14 +171,13 @@ class ReplayWindow(arcade.Window):
             )
 
     def _draw_legend(self):
-        x = MARGIN
-        for driver in self.drivers:
-            arcade.draw_circle_filled(x, LEGEND_Y, 6, self.colors[driver])
+        for i, driver in enumerate(self.drivers):
+            column, row = i % LEGEND_COLUMNS, i // LEGEND_COLUMNS
+            x = MARGIN + column * LEGEND_COLUMN_WIDTH
+            y = LEGEND_TOP_Y - row * LEGEND_ROW_HEIGHT
+            arcade.draw_circle_filled(x, y, 6, self.colors[driver])
             suffix = " (gauges)" if driver == self.focus_driver else ""
-            arcade.draw_text(
-                f"{driver}{suffix}", x + 14, LEGEND_Y - 7, arcade.color.WHITE, 12
-            )
-            x += 140
+            arcade.draw_text(f"{driver}{suffix}", x + 14, y - 7, arcade.color.WHITE, 12)
 
     def _draw_gauge_panel(self, frame: dict):
         arcade.draw_lrbt_rectangle_filled(
@@ -244,12 +260,28 @@ def main():
         "--drivers",
         default=",".join(REPLAY_DRIVERS),
         help="Comma-separated 3-letter FastF1 driver codes, e.g. VER,LEC,NOR. "
-        "The first one shown gets the gauge panel.",
+        "The first one shown gets the gauge panel. Ignored if --all is set.",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Replay every driver with cached telemetry (the full grid) instead of --drivers.",
     )
     args = parser.parse_args()
-    requested_drivers = [d.strip().upper() for d in args.drivers.split(",") if d.strip()]
 
     laps_df, _, telemetry_df = load_and_clean_all()
+
+    if args.all:
+        all_drivers = sorted(telemetry_df["Driver"].unique())
+        focus_default = REPLAY_DRIVERS[0]
+        requested_drivers = (
+            [focus_default] + [d for d in all_drivers if d != focus_default]
+            if focus_default in all_drivers
+            else all_drivers
+        )
+    else:
+        requested_drivers = [d.strip().upper() for d in args.drivers.split(",") if d.strip()]
+
     lap_dfs = load_multi_driver_lap_telemetry(telemetry_df, requested_drivers)
     missing = [d for d in requested_drivers if d not in lap_dfs]
     if missing:

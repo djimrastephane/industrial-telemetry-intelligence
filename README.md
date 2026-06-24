@@ -362,6 +362,7 @@ ollama pull qwen2.5:7b-instruct     # default model (src/config.py:OLLAMA_MODEL)
    ```bash
    python app/arcade_replay.py --drivers VER,LEC,NOR
    python app/arcade_replay.py --drivers VER          # single driver, as in earlier phases
+   python app/arcade_replay.py --all                  # every cached driver (the full grid)
    ```
 
    Replays each requested driver's cached fastest lap as a colour-coded car moving around the
@@ -530,7 +531,10 @@ year from 2020-2025 (~6,500 laps).
   *(Phase 8)*
 - `src/config.py:REPLAY_DRIVERS` sets the default driver set (`VER, LEC, NOR`); `--drivers` on
   the command line accepts any comma-separated list of cached driver codes, and an unknown code
-  is skipped with a warning rather than aborting the whole replay. *(Phase 8)*
+  is skipped with a warning rather than aborting the whole replay. `--all` replays every driver
+  with cached telemetry (the full 20-car grid) instead, with `REPLAY_DRIVERS[0]` kept as the
+  focus driver; the legend wraps into a 5-column grid and `CAR_COLORS` has 20 distinct entries
+  so the full grid doesn't repeat colours. *(Phase 8)*
 - 6 new tests for the multi-driver loading, bounds-union, and longest-duration helpers in
   `replay_data.py`, on top of the existing single-driver replay tests; 84 tests total.
   *(Phase 8)*
