@@ -146,10 +146,10 @@ pip install -r requirements.txt
    Tests use synthetic fixtures and a temp directory — they never overwrite the real
    downloaded data in `data/processed/`.
 
-## Status: Phase 1 and most of Phase 2 done
+## Status: Phase 1 and Phase 2 done
 
-Dataset so far: 2024 Bahrain Grand Prix, Race session, all 20 drivers' lap/weather data plus
-cached telemetry for two drivers.
+Dataset so far: 2024 Bahrain Grand Prix, Race session, all 20 drivers' lap/weather/telemetry
+data.
 
 - End-to-end ingestion of real FastF1 data (laps, weather, telemetry, tyre compound/life,
   sector times), cached locally as parquet. *(Phase 1)*
@@ -159,18 +159,17 @@ cached telemetry for two drivers.
   trace. *(Phase 1)*
 - A working Streamlit dashboard with data-loading status and a driver selector covering all
   20 drivers. *(Phase 1 success criteria: pipeline runs end-to-end, dashboard works)*
-- Driver-to-driver comparison (lap time, tyre degradation, telemetry trace overlay).
-  *(Phase 2)*
+- Driver-to-driver comparison (lap time, tyre degradation, telemetry trace overlay) for
+  **any** two drivers in the session, not just a fixed pair. *(Phase 2)*
 - Baselines across all drivers: average lap time, fastest lap, consistency score (lap time
   std dev), linear lap-time degradation slope per tyre stint. *(Phase 2)*
 - Anomaly detection: per-driver lap-time z-score with a configurable threshold, shown as a
   dashboard table. *(Phase 2)*
 - pytest coverage for ingestion round-tripping and feature engineering correctness.
 
-**Phase 2 gap**: telemetry traces (speed/throttle/brake) are only cached for the two drivers
-in `src/config.py:COMPARISON_DRIVERS`, so the comparative *telemetry* view is limited to that
-pair rather than any two drivers chosen from the full grid. Lap-time-based comparisons (lap
-trend, degradation, consistency, anomalies) already work for all drivers.
+Fastest-lap telemetry (speed/throttle/brake) is cached for every driver in the session, so
+the dashboard's driver selector and telemetry comparison both cover the full grid.
+`src/config.py:COMPARISON_DRIVERS` only sets the *default pre-selected pair* shown on load.
 
 ## Current limitations
 
@@ -179,8 +178,6 @@ trend, degradation, consistency, anomalies) already work for all drivers.
   the first lap on a new tyre compound, not genuine equipment issues.
 - The degradation model is a single straight line fit per stint; real wear is often non-linear
   (fast initial drop-off, then a more gradual climb).
-- Telemetry is only cached for the two drivers in `src/config.py:COMPARISON_DRIVERS` (see
-  Phase 2 gap above).
 - No predictive modelling, forecasting, or recommendation logic yet — by design, per the
   Karpathy "dumb baselines first" approach.
 - No multi-race, multi-season, or multi-year data yet.
@@ -193,11 +190,10 @@ Each phase is built and verified end-to-end on real data before the next one sta
 - **Phase 1 — Single Driver Exploration** ✅ done. Bahrain GP 2024 Race, one driver: load,
   explore, visualize, save processed data, verify data quality. *Success criteria met:
   pipeline runs without errors; basic dashboard works.*
-- **Phase 2 — Race Intelligence** 🚧 mostly done. Bahrain GP 2024 Race, all drivers: driver
-  comparison, tyre degradation analysis, consistency metrics, simple anomaly detection.
-  *Success criteria met: dashboard supports driver selection; comparative analysis available
-  (lap-time based). Remaining: extend cached telemetry traces beyond the current 2-driver
-  pair so any two drivers can be compared on speed/throttle/brake, not just lap time.*
+- **Phase 2 — Race Intelligence** ✅ done. Bahrain GP 2024 Race, all drivers: driver
+  comparison (lap time and telemetry), tyre degradation analysis, consistency metrics, simple
+  anomaly detection. *Success criteria met: dashboard supports driver selection across the
+  full grid; comparative analysis available for both lap-time metrics and telemetry traces.*
 - **Phase 3 — Seasonal Monitoring** ⏳ planned. Entire 2024 season: driver trends, team trends,
   performance evolution, telemetry aggregation. Industrial analogy: monitoring multiple assets
   over time. Success criteria: season-wide KPIs, asset health indicators.

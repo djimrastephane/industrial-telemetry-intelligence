@@ -94,8 +94,9 @@ if {driver_a, driver_b}.issubset(telemetry_drivers):
     st.plotly_chart(plot_driver_comparison(telemetry_df, driver_a, driver_b), use_container_width=True)
 else:
     st.info(
-        f"Telemetry traces are only cached for {sorted(telemetry_drivers)} "
-        f"(set in src/config.py COMPARISON_DRIVERS). Re-run ingestion to add more drivers."
+        f"No cached fastest-lap telemetry for {sorted({driver_a, driver_b} - telemetry_drivers)} "
+        "(likely no completed timed lap for this driver in the session). "
+        "Re-run `python -m src.data_ingestion` if data/processed is stale."
     )
 
 st.divider()

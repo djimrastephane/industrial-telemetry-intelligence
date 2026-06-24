@@ -21,7 +21,8 @@ SEASON_YEAR = 2024
 EVENT_NAME = "Bahrain Grand Prix"
 SESSION_NAME = "R"  # Race
 
-# Drivers used for telemetry-trace comparisons (3-letter FastF1 codes)
+# Default driver pair pre-selected in the dashboard (3-letter FastF1 codes).
+# Telemetry is cached for every driver in the session, not just this pair.
 COMPARISON_DRIVERS = ["VER", "LEC"]
 
 # Processed parquet filenames

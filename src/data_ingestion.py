@@ -56,9 +56,16 @@ def get_weather_df(session: fastf1.core.Session) -> pd.DataFrame:
 
 def get_telemetry_df(
     session: fastf1.core.Session,
-    drivers: list[str] = config.COMPARISON_DRIVERS,
+    drivers: list[str] | None = None,
 ) -> pd.DataFrame:
-    """Telemetry for each driver's fastest lap, tagged with Driver and LapNumber."""
+    """Telemetry for each driver's fastest lap, tagged with Driver and LapNumber.
+
+    Defaults to every driver in the session so any pair can be compared in the
+    dashboard, not just the COMPARISON_DRIVERS default selection.
+    """
+    if drivers is None:
+        drivers = sorted(session.laps["Driver"].unique())
+
     frames = []
     for driver in drivers:
         driver_laps = session.laps.pick_drivers(driver)
