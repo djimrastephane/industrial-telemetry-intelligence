@@ -143,6 +143,7 @@ Swapping the data source means replacing `src/data_ingestion.py` and the column 
 ![Fleet Overview — KPI cards and health table](assets/screenshots/fleet_overview_tab.png)
 ![Fleet Overview — health table scrolled](assets/screenshots/fleet_overview_health_table.png)
 ![Fleet Overview — active alerts and event log](assets/screenshots/fleet_overview_active_alerts.png)
+![Fleet Overview — operational event log expanded](assets/screenshots/fleet_overview_event_log.png)
 ![Driver Detail tab](assets/screenshots/driver_detail_tab.png)
 ![Race Detail tab](assets/screenshots/race_detail_tab.png)
 ![Season Monitoring tab](assets/screenshots/season_monitoring_tab.png)
