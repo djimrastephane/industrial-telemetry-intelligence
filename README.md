@@ -140,17 +140,10 @@ Swapping the data source means replacing `src/data_ingestion.py` and the column 
 | Decision Support (7) | Recommended pit windows, sorted by urgency |
 | Arcade Replay (8) | Multiple cars on the real track shape, live instrument cluster |
 
-![Fleet Overview tab](assets/screenshots/fleet_overview_tab.png)
+![Fleet Overview — KPI cards and health table](assets/screenshots/fleet_overview_tab.png)
 ![Fleet Overview — health table scrolled](assets/screenshots/fleet_overview_health_table.png)
+![Fleet Overview — active alerts and event log](assets/screenshots/fleet_overview_active_alerts.png)
 ![Driver Detail tab](assets/screenshots/driver_detail_tab.png)
-![Race Detail tab](assets/screenshots/race_detail_tab.png)
-![Season Monitoring tab](assets/screenshots/season_monitoring_tab.png)
-![Fleet Monitoring tab](assets/screenshots/fleet_monitoring_tab.png)
-![Predictive Analytics tab](assets/screenshots/predictive_analytics_tab.png)
-![Operational Assistant tab](assets/screenshots/operational_assistant_tab.png)
-![Decision Support tab](assets/screenshots/decision_support_tab.png)
-![Arcade replay window](assets/screenshots/arcade_replay.png)
-
 ![Race Detail tab](assets/screenshots/race_detail_tab.png)
 ![Season Monitoring tab](assets/screenshots/season_monitoring_tab.png)
 ![Fleet Monitoring tab](assets/screenshots/fleet_monitoring_tab.png)
