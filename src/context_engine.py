@@ -122,6 +122,12 @@ OBSERVED_LOW_SPEED = "low_speed"
 OBSERVED_LAPTIME_INCREASE = "laptime_increase"
 OBSERVED_SPEED_ANOMALY = "speed_anomaly"
 
+# Lower speed, a longer lap time, and an unlabelled "speed anomaly" are the
+# same underlying symptom (the car went slower than expected) observed
+# through different telemetry signals - a pit out-lap or tyre degradation
+# explains all three equally, so they share the same explanation rules below.
+PERFORMANCE_DROP_EFFECTS = (OBSERVED_LOW_SPEED, OBSERVED_LAPTIME_INCREASE, OBSERVED_SPEED_ANOMALY)
+
 
 def load_context() -> dict[str, pd.DataFrame]:
     """Load the raw operational-context sources, each sorted by time.
@@ -430,7 +436,7 @@ def generate_context_summary(
             confidence = "High"
             if TRACK_CONDITION_EXPLANATION not in " ".join(sentences):
                 sentences.append(TRACK_CONDITION_EXPLANATION)
-        elif observed_effect in (OBSERVED_LOW_SPEED, OBSERVED_SPEED_ANOMALY) and context_now.get("PitThisLap"):
+        elif observed_effect in PERFORMANCE_DROP_EFFECTS and context_now.get("PitThisLap"):
             # A pit out-lap on a cold, fresh tyre is a known, direct cause of a
             # slow lap - distinct from gradual tyre wear (TyreLife threshold
             # below), which is why this check comes first. Found via a real
@@ -440,12 +446,12 @@ def generate_context_summary(
             # was fully explained by the pit stop it already had context for.
             confidence = "High"
             sentences.append(PIT_OUT_LAP_EXPLANATION)
-        elif observed_effect in (OBSERVED_LOW_SPEED, OBSERVED_SPEED_ANOMALY) and (
+        elif observed_effect in PERFORMANCE_DROP_EFFECTS and (
             tyre_life is not None and pd.notna(tyre_life) and tyre_life >= config.CONTEXT_TYRE_LIFE_HIGH_THRESHOLD
         ):
             confidence = "High"
             sentences.append(TYRE_DEGRADATION_EXPLANATION)
-        elif observed_effect in (OBSERVED_LOW_SPEED, OBSERVED_SPEED_ANOMALY) and track_status == "Green":
+        elif observed_effect in PERFORMANCE_DROP_EFFECTS and track_status == "Green":
             confidence = "Low"
             sentences.append(ANOMALY_EXPLANATION)
         else:

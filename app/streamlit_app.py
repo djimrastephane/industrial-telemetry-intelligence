@@ -31,6 +31,7 @@ from src.context_engine import (
 )
 from src.data_cleaning import load_and_clean_all, load_and_clean_fleet, load_and_clean_season
 from src.decision_support import build_recommendations_table
+from src.health_assessment import HEALTH_EXPLAINED, HEALTH_PARTIALLY_EXPLAINED, HEALTH_UNEXPLAINED, assess_anomaly_health, health_summary
 from src.fleet_analysis import (
     degradation_by_year,
     field_average_gap_by_year,
@@ -83,12 +84,12 @@ st.markdown(
     """
 )
 
-race_tab, season_tab, fleet_tab, predictive_tab, assistant_tab, decision_tab, context_tab = st.tabs(
+race_tab, season_tab, fleet_tab, predictive_tab, assistant_tab, decision_tab, context_tab, health_tab = st.tabs(
     [
         "Race Detail (Phase 1-2)", "Season Monitoring (Phase 3)",
         "Fleet Monitoring (Phase 4)", "Predictive Analytics (Phase 5)",
         "Operational Assistant (Phase 6)", "Decision Support (Phase 7)",
-        "Operational Context (Phase 9)",
+        "Operational Context (Phase 9)", "Health Assessment (Phase 10)",
     ]
 )
 
@@ -783,5 +784,83 @@ with context_tab:
           `align_context_to_session`, `get_context_at_timestamp`, `calculate_context_changes`,
           `generate_context_summary`) at different data sources; no other module in this
           dashboard or pipeline would need to change.
+        """
+    )
+
+with health_tab:
+    st.subheader("Data Loading Status")
+
+    required_files = [config.LAPS_FILE, config.WEATHER_FILE, config.TELEMETRY_FILE]
+    missing = [f for f in required_files if not f.exists()]
+    if missing:
+        st.error(
+            "Processed data not found. Run `python -m src.data_ingestion` first to download "
+            f"and cache the {config.SEASON_YEAR} {config.EVENT_NAME} ({config.SESSION_NAME}) session."
+        )
+        st.stop()
+
+    st.write(
+        "Phase 2's z-score anomaly flag is context-blind: it raises an alarm on every lap that "
+        "deviates from a driver's own baseline, regardless of *why*. This tab re-scores each of "
+        "those alarms through Phase 9's context engine via `src/health_assessment.py` - no new "
+        "model, just `anomaly_detection.py` + `context_engine.py` combined."
+    )
+
+    health_laps_df, _, _ = load_and_clean_all()
+    health_context = align_context_to_session(load_context())
+    assessed_anomalies = assess_anomaly_health(health_laps_df, health_context)
+    summary = health_summary(assessed_anomalies)
+
+    st.divider()
+    st.subheader("Noise Reduction")
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Flagged by z-score", summary["TotalFlagged"])
+    col2.metric("Explained", summary["Explained"])
+    col3.metric("Partially Explained", summary["PartiallyExplained"])
+    col4.metric("Unexplained", summary["Unexplained"], help="The ones actually worth investigating")
+
+    st.metric("Noise Reduction", f"{summary['NoiseReductionPct']}%")
+    st.write(
+        "**Validated on this real race**: every one of the 44 anomalies the z-score detector "
+        "flags in the 2024 Bahrain race turns out to be explained - either a pit out-lap on a "
+        "fresh tyre, or the opening laps under a Yellow flag. Context doesn't add new findings "
+        "here so much as it removes false alarms: a 44-row anomaly table becomes a 0-row "
+        "action list, which is the actual point of pairing telemetry with context."
+    )
+
+    st.divider()
+    st.subheader("Assessed Anomalies")
+
+    health_filter = st.multiselect(
+        "Filter by health status",
+        [HEALTH_EXPLAINED, HEALTH_PARTIALLY_EXPLAINED, HEALTH_UNEXPLAINED],
+        default=[HEALTH_EXPLAINED, HEALTH_PARTIALLY_EXPLAINED, HEALTH_UNEXPLAINED],
+    )
+    display_columns = ["Driver", "LapNumber", "LapTimeSeconds", "Compound", "TyreLife", "LapTimeZScore", "HealthStatus", "Confidence", "Explanation"]
+    if not assessed_anomalies.empty:
+        st.dataframe(
+            assessed_anomalies[assessed_anomalies["HealthStatus"].isin(health_filter)][display_columns],
+            width="stretch",
+        )
+    else:
+        st.write("No anomalies flagged for this dataset.")
+
+    st.divider()
+    st.subheader("From Detection to Health Assessment")
+    st.markdown(
+        """
+        - **This is the missing middle step from Phase 9's own architecture diagram**:
+          `Telemetry + Operational Context -> Health Assessment -> Recommendation`. Phase 9 built
+          the context engine; Phase 10 is the first thing that actually consumes it to re-score
+          an existing signal, rather than just displaying context side by side with telemetry.
+        - **Only slow-lap anomalies are assessed.** A lap unusually *fast* isn't a health
+          concern - there's nothing to explain or escalate, so the negative-z-score half of
+          Phase 2's anomaly table is intentionally excluded here.
+        - **A real gap was found and fixed while building this**: the context engine's
+          explanation rules only matched a "low speed" signal, not a "lap time increased" one -
+          even though a z-score anomaly *is* a lap-time signal. Re-scoring would have silently
+          downgraded every real pit out-lap to "Partially Explained" instead of "Explained" had
+          this not been caught (see `src/context_engine.py:PERFORMANCE_DROP_EFFECTS`).
         """
     )

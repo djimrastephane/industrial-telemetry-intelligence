@@ -222,6 +222,18 @@ def test_generate_context_summary_low_speed_explained_by_pit_out_lap():
     assert "pit stop" in summary["interpretation"][-1].lower()
 
 
+def test_generate_context_summary_laptime_increase_also_explained_by_pit_out_lap():
+    # A z-score anomaly is flagged on LapTimeSeconds, so its natural
+    # observed_effect is "laptime_increase", not "low_speed" - the same pit
+    # out-lap fact must explain it under either label, since they're the
+    # same physical symptom (the car went slower than expected).
+    summary = generate_context_summary(
+        {"TrackStatus": "Green", "TyreLife": 1, "PitThisLap": True}, {}, OBSERVED_LAPTIME_INCREASE
+    )
+    assert summary["confidence"] == "High"
+    assert "pit stop" in summary["interpretation"][-1].lower()
+
+
 def test_generate_context_summary_pit_out_lap_takes_priority_over_anomaly():
     # Without the PitThisLap flag, the same low tyre life + Green track is
     # correctly read as an unexplained anomaly instead.
