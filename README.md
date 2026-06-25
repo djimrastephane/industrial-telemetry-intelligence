@@ -130,8 +130,8 @@ Swapping the data source means replacing `src/data_ingestion.py` and the column 
 
 | Tab | What it shows |
 |---|---|
-| **Fleet Overview (new)** | KPI cards, asset health table, active alerts, full event log |
-| **Driver Detail (new)** | Health status, expected vs actual metrics, lap trends, active alerts, pit recommendations |
+| **Fleet Overview** | KPI cards, asset health table, active alerts, full event log |
+| **Driver Detail** | Health status, expected vs actual metrics, lap trends, active alerts, pit recommendations |
 | Race Detail (1-2) | Tyre degradation, speed/throttle/brake traces, anomaly table |
 | Season Monitoring (3) | Position/speed-trap trends across a season, asset-health slope |
 | Fleet Monitoring (4) | Cross-year pace/degradation benchmarking |
@@ -139,6 +139,17 @@ Swapping the data source means replacing `src/data_ingestion.py` and the column 
 | Operational Assistant (6) | A real question, the retrieved evidence, the grounded LLM answer |
 | Decision Support (7) | Recommended pit windows, sorted by urgency |
 | Arcade Replay (8) | Multiple cars on the real track shape, live instrument cluster |
+
+![Fleet Overview tab](assets/screenshots/fleet_overview_tab.png)
+![Fleet Overview — health table scrolled](assets/screenshots/fleet_overview_health_table.png)
+![Driver Detail tab](assets/screenshots/driver_detail_tab.png)
+![Race Detail tab](assets/screenshots/race_detail_tab.png)
+![Season Monitoring tab](assets/screenshots/season_monitoring_tab.png)
+![Fleet Monitoring tab](assets/screenshots/fleet_monitoring_tab.png)
+![Predictive Analytics tab](assets/screenshots/predictive_analytics_tab.png)
+![Operational Assistant tab](assets/screenshots/operational_assistant_tab.png)
+![Decision Support tab](assets/screenshots/decision_support_tab.png)
+![Arcade replay window](assets/screenshots/arcade_replay.png)
 
 ![Race Detail tab](assets/screenshots/race_detail_tab.png)
 ![Season Monitoring tab](assets/screenshots/season_monitoring_tab.png)
