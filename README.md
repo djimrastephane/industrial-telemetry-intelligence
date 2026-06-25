@@ -72,10 +72,66 @@ changing any other module:
 The point isn't that air temperature *equals* reservoir pressure - it's that telemetry needs
 contextual interpretation, on an architecture that survives swapping the context source.
 
+## Industrial Monitoring Interface
+
+The dashboard adopts the information architecture of industrial asset monitoring systems.
+Formula 1 telemetry is the demonstration dataset; the interface design is intended to transfer
+directly to industrial telemetry systems such as ESP surveillance, wind farm monitoring,
+compressor monitoring, manufacturing assets, and hydraulic fracturing fleet monitoring.
+
+No claim is made that Formula 1 telemetry is equivalent to industrial SCADA data. The
+transferability lies in the **software architecture and monitoring workflow**, not the physics.
+
+### Navigation hierarchy
+
+```
+Fleet Overview  →  Driver Detail  →  Telemetry Replay
+(What needs         (Why?)            (What happened?)
+ attention?)
+```
+
+### Design principles applied
+
+| Principle | Implementation |
+|---|---|
+| **KPI-first layout** | Fleet Overview opens with 8 metric cards: assets monitored, laps loaded, healthy / warning / critical counts, active alerts, track status, session |
+| **Asset health** | Every driver has a Green / Amber / Red status from deterministic rules (no new models) |
+| **Expected vs Actual** | Driver Detail shows baseline average pace vs last lap time, and expected degradation slope |
+| **Event timeline** | Chronological log of pit stops, track status changes, anomalies, recommendations, and race control messages |
+| **Trend-based monitoring** | Lap time trend and tyre degradation charts preferred over point-in-time gauges |
+| **Progressive disclosure** | Overview answers "what needs attention?"; Detail answers "why?"; Replay answers "what happened?" |
+| **Decision support** | Every alert in the event log carries an Action field: what to do next |
+
+### Health status rules (deterministic, no new models)
+
+| Status | Trigger |
+|---|---|
+| Critical (Red) | Any unexplained anomaly (Phase 10) OR "Pit now" recommendation (Phase 7) |
+| Warning (Amber) | Any partially-explained anomaly OR active pit recommendation OR High/Medium degradation risk |
+| Healthy (Green) | None of the above |
+
+### Transferability to industrial systems
+
+The same Fleet Overview → Driver Detail → Replay hierarchy applies directly to:
+
+- **ESP surveillance**: each ESP is an asset; the health table is the fleet; the event log
+  carries pump starts, vibration alarms, and motor-current anomalies.
+- **Wind farm monitoring**: each turbine is an asset; SCADA alarms replace race control messages;
+  power-curve deviations replace lap-time anomalies.
+- **Compressor monitoring**: each compressor is an asset; vibration spectrum events replace pit
+  stops; valve-cycle counts replace tyre stints.
+- **Manufacturing**: each machine or line is an asset; shift logs replace race laps; OEE metrics
+  replace lap times.
+
+Swapping the data source means replacing `src/data_ingestion.py` and the column names in
+`src/context_engine.py`; no other module needs to change.
+
 ## Screenshots
 
 | Tab | What it shows |
 |---|---|
+| **Fleet Overview (new)** | KPI cards, asset health table, active alerts, full event log |
+| **Driver Detail (new)** | Health status, expected vs actual metrics, lap trends, active alerts, pit recommendations |
 | Race Detail (1-2) | Tyre degradation, speed/throttle/brake traces, anomaly table |
 | Season Monitoring (3) | Position/speed-trap trends across a season, asset-health slope |
 | Fleet Monitoring (4) | Cross-year pace/degradation benchmarking |
@@ -153,9 +209,11 @@ industrial-telemetry-intelligence/
     replay_data.py           # pure geometry/interpolation helpers for the Arcade replay
     context_engine.py        # Phase 9: domain-independent operational context engine
     health_assessment.py     # Phase 10: re-scores Phase 2 anomalies through Phase 9 context
+    event_log.py             # Phase 11: unified chronological event log from all sources
+    fleet_health.py          # Phase 11: per-driver Green/Amber/Red health status (deterministic)
     visualisation.py         # shared Plotly figures
   app/
-    streamlit_app.py         # dashboard: one tab per phase
+    streamlit_app.py         # dashboard: Fleet Overview + Driver Detail + all phase tabs
     arcade_replay.py          # standalone Arcade window: multi-driver cars + live HUD + context
   notebooks/                 # same analysis, exploratory format
   tests/                     # one test file per src module, synthetic fixtures only
@@ -231,9 +289,10 @@ ollama pull qwen2.5:7b-instruct     # default model (src/config.py:OLLAMA_MODEL)
    python -m src.health_assessment
    ```
 
-6. **Run the dashboard** (one tab per phase: Race Detail, Season Monitoring, Fleet Monitoring,
-   Predictive Analytics, Operational Assistant, Decision Support, Operational Context, Health
-   Assessment):
+6. **Run the dashboard** (opens on **Fleet Overview** — the industrial monitoring entry point.
+   Additional tabs cover every phase: Driver Detail, Race Detail, Season Monitoring, Fleet
+   Monitoring, Predictive Analytics, Operational Assistant, Decision Support, Operational
+   Context, Health Assessment):
 
    ```bash
    streamlit run app/streamlit_app.py
@@ -328,7 +387,15 @@ or opening-lap yellow flags) - 100% noise reduction, with zero false positives l
 The "Unexplained" escalation path is proven by a synthetic test, since this race didn't happen
 to contain a real unexplained anomaly.
 
-117 tests total across all ten phases (`pytest tests/ -v`).
+**Phase 11 - Industrial Monitoring Interface ✅** Transforms the tab-first analytics dashboard
+into a three-level industrial monitoring interface: Fleet Overview (KPI cards, asset health
+table, event log), Driver Detail (expected vs actual, lap trends, per-driver alerts and
+recommendations), and Telemetry Replay (existing arcade app). Two new `src/` modules:
+`event_log.py` (unified chronological event log from pit, anomaly, recommendation, track-status,
+and race-control events) and `fleet_health.py` (deterministic Green/Amber/Red health status per
+driver). No new models — all inputs come from Phases 2, 7, and 10.
+
+142 tests total across all phases (`pytest tests/ -v`).
 
 ## Architecture rule
 

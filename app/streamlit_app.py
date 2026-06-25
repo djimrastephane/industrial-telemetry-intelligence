@@ -2,11 +2,19 @@
 
 FastF1 telemetry is used as a public surrogate for ESP / SCADA / production
 sensor data. Run with: streamlit run app/streamlit_app.py
+
+Navigation hierarchy:
+    Level 1 – Fleet Overview   : fleet health KPIs, asset health table, event log
+    Level 2 – Driver Detail    : per-driver health, expected vs actual, trends
+    Level 3 – Telemetry Replay : arcade replay (python app/arcade_replay.py)
+
+All remaining tabs preserve the full Phase 1-10 analytics pipeline.
 """
 
 import sys
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -23,6 +31,7 @@ from src.context_engine import (
     OBSERVED_LAPTIME_INCREASE,
     OBSERVED_LOW_SPEED,
     OBSERVED_SPEED_ANOMALY,
+    TRACK_STATUS_LABELS,
     align_context_to_session,
     calculate_context_changes,
     generate_context_summary,
@@ -31,12 +40,33 @@ from src.context_engine import (
 )
 from src.data_cleaning import load_and_clean_all, load_and_clean_fleet, load_and_clean_season
 from src.decision_support import build_recommendations_table
-from src.health_assessment import HEALTH_EXPLAINED, HEALTH_PARTIALLY_EXPLAINED, HEALTH_UNEXPLAINED, assess_anomaly_health, health_summary
+from src.degradation_analysis import degradation_per_stint
+from src.event_log import (
+    EVENT_COLUMNS,
+    SEVERITY_CRITICAL,
+    SEVERITY_WARNING,
+    build_event_log,
+)
+from src.fleet_health import (
+    HEALTH_COLOR_LABEL,
+    HEALTH_CRITICAL,
+    HEALTH_HEALTHY,
+    HEALTH_WARNING,
+    compute_fleet_health,
+    fleet_kpis,
+)
 from src.fleet_analysis import (
     degradation_by_year,
     field_average_gap_by_year,
     fleet_benchmark_table,
     teammate_gap_by_year,
+)
+from src.health_assessment import (
+    HEALTH_EXPLAINED,
+    HEALTH_PARTIALLY_EXPLAINED,
+    HEALTH_UNEXPLAINED,
+    assess_anomaly_health,
+    health_summary,
 )
 from src.operational_assistant import answer_question
 from src.predictive_models import (
@@ -69,29 +99,328 @@ from src.visualisation import (
     plot_tyre_life_vs_laptime,
 )
 
+# ---------------------------------------------------------------------------
+# Page config
+# ---------------------------------------------------------------------------
+
 st.set_page_config(page_title="Industrial Telemetry Intelligence", layout="wide")
 
 st.title("Industrial Asset Monitoring and Decision Support System")
 st.caption("Demonstrated on Formula 1 telemetry as a public surrogate for industrial sensor data")
 
-st.markdown(
-    """
-    **This is not a sports analytics project.** It is an industrial telemetry analytics
-    project, demonstrated on Formula 1 data because plant-level ESP, SCADA, and production
-    well sensor data is rarely public. F1 telemetry is high-frequency, multi-sensor, and
-    failure-relevant in the same way: it lets us prototype anomaly detection and degradation
-    analysis end-to-end before connecting it to proprietary industrial data.
-    """
-)
+# ---------------------------------------------------------------------------
+# Helper functions (UI only – no analytics logic)
+# ---------------------------------------------------------------------------
 
-race_tab, season_tab, fleet_tab, predictive_tab, assistant_tab, decision_tab, context_tab, health_tab = st.tabs(
-    [
-        "Race Detail (Phase 1-2)", "Season Monitoring (Phase 3)",
-        "Fleet Monitoring (Phase 4)", "Predictive Analytics (Phase 5)",
-        "Operational Assistant (Phase 6)", "Decision Support (Phase 7)",
-        "Operational Context (Phase 9)", "Health Assessment (Phase 10)",
-    ]
-)
+_REQUIRED_FILES = [config.LAPS_FILE, config.WEATHER_FILE, config.TELEMETRY_FILE]
+
+
+def _data_missing() -> list[Path]:
+    return [f for f in _REQUIRED_FILES if not f.exists()]
+
+
+def _style_health(val: str) -> str:
+    if val == HEALTH_CRITICAL:
+        return "background-color: #8b1a1a; color: white; font-weight: bold"
+    if val == HEALTH_WARNING:
+        return "background-color: #7a5200; color: white; font-weight: bold"
+    if val == HEALTH_HEALTHY:
+        return "background-color: #1a5c1a; color: white; font-weight: bold"
+    return ""
+
+
+def _style_severity(val: str) -> str:
+    if val == SEVERITY_CRITICAL:
+        return "background-color: #8b1a1a; color: white"
+    if val == SEVERITY_WARNING:
+        return "background-color: #7a5200; color: white"
+    return ""
+
+
+def _last_track_status(laps_df: pd.DataFrame) -> str:
+    if "TrackStatus" not in laps_df.columns or laps_df.empty:
+        return "Unknown"
+    last = laps_df.dropna(subset=["LapStartTimeSeconds"]).sort_values("LapStartTimeSeconds").iloc[-1]
+    raw = str(last.get("TrackStatus", "")).strip()
+    return TRACK_STATUS_LABELS.get(raw[-1] if raw else "", "Unknown")
+
+
+# ---------------------------------------------------------------------------
+# Tab definitions – Fleet Overview and Driver Detail come first
+# ---------------------------------------------------------------------------
+
+(
+    overview_tab, driver_tab,
+    race_tab, season_tab, fleet_tab, predictive_tab,
+    assistant_tab, decision_tab, context_tab, health_tab,
+) = st.tabs([
+    "Fleet Overview",
+    "Driver Detail",
+    "Race Detail (Phase 1-2)",
+    "Season Monitoring (Phase 3)",
+    "Fleet Monitoring (Phase 4)",
+    "Predictive Analytics (Phase 5)",
+    "Operational Assistant (Phase 6)",
+    "Decision Support (Phase 7)",
+    "Operational Context (Phase 9)",
+    "Health Assessment (Phase 10)",
+])
+
+# ===========================================================================
+# Level 1 – Fleet Overview
+# ===========================================================================
+
+with overview_tab:
+    missing = _data_missing()
+    if missing:
+        st.error(
+            "Processed data not found. Run `python -m src.data_ingestion` first to download "
+            f"and cache the {config.SEASON_YEAR} {config.EVENT_NAME} ({config.SESSION_NAME}) session."
+        )
+        st.write("Missing files:", [str(f) for f in missing])
+    else:
+        ov_laps, _, _ = load_and_clean_all()
+        ov_context = align_context_to_session(load_context())
+        ov_anomalies = assess_anomaly_health(ov_laps, ov_context)
+        ov_recs = build_recommendations_table(ov_laps)
+        ov_health = compute_fleet_health(ov_laps, ov_anomalies, ov_recs)
+        ov_kpis = fleet_kpis(ov_health, ov_laps)
+        ov_event_log = build_event_log(ov_laps, ov_context, ov_anomalies, ov_recs)
+        ov_track_status = _last_track_status(ov_laps)
+
+        # --- KPI cards row 1 ------------------------------------------------
+        st.subheader("Fleet Status")
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Assets Monitored", ov_kpis["DriverCount"])
+        k2.metric("Total Laps Loaded", ov_kpis["TotalLaps"])
+        k3.metric("Healthy", ov_kpis["Healthy"])
+        k4.metric("Warning", ov_kpis["Warning"])
+
+        k5, k6, k7, k8 = st.columns(4)
+        k5.metric("Critical", ov_kpis["Critical"])
+        k6.metric("Active Alerts", ov_kpis["ActiveAlerts"])
+        k7.metric("Track Status", ov_track_status)
+        k8.metric("Session", f"{config.SEASON_YEAR} {config.EVENT_NAME}")
+
+        st.divider()
+
+        # --- Asset health table --------------------------------------------
+        st.subheader("Asset Health Table")
+        st.caption(
+            "Health status derived from anomaly assessment (Phase 10) and pit recommendations "
+            "(Phase 7). No new models — all inputs come from existing analytics."
+        )
+
+        display_health = ov_health[[
+            "Driver", "HealthStatus", "CurrentCompound", "TyreLife",
+            "CurrentLap", "Stint", "RiskCategory",
+            "WorstAnomaly", "ActiveRecommendation",
+        ]].copy()
+        styled_health = display_health.style.map(_style_health, subset=["HealthStatus"])
+        st.dataframe(styled_health, use_container_width=True, hide_index=True)
+
+        # Driver selector that feeds Driver Detail tab
+        st.divider()
+        available_drivers = sorted(ov_laps["Driver"].unique())
+        selected_for_detail = st.selectbox(
+            "Select driver to view in Driver Detail tab:",
+            available_drivers,
+            index=available_drivers.index(
+                st.session_state.get("detail_driver", config.COMPARISON_DRIVERS[0])
+                if st.session_state.get("detail_driver") in available_drivers
+                else available_drivers[0]
+            ),
+            key="overview_driver_selector",
+        )
+        if selected_for_detail:
+            st.session_state["detail_driver"] = selected_for_detail
+        st.info("Switch to the **Driver Detail** tab above to see the full driver view.")
+
+        st.divider()
+
+        # --- Active alerts -------------------------------------------------
+        st.subheader("Active Alerts")
+        alert_df = ov_event_log[
+            ov_event_log["Severity"].isin([SEVERITY_WARNING, SEVERITY_CRITICAL])
+        ][["Severity", "EventType", "Driver", "LapNumber", "Description", "Action"]].copy()
+
+        if alert_df.empty:
+            st.success("No active warnings or critical alerts.")
+        else:
+            styled_alerts = alert_df.style.map(_style_severity, subset=["Severity"])
+            st.dataframe(styled_alerts, use_container_width=True, hide_index=True)
+
+        st.divider()
+
+        # --- Operational event log ----------------------------------------
+        st.subheader("Operational Event Log")
+        with st.expander("Full chronological event log", expanded=False):
+            if ov_event_log.empty:
+                st.write("No events recorded.")
+            else:
+                log_display = ov_event_log[[
+                    "SessionTimeSeconds", "Severity", "EventType",
+                    "Driver", "LapNumber", "Description", "Context", "Action",
+                ]].copy()
+                styled_log = log_display.style.map(_style_severity, subset=["Severity"])
+                st.dataframe(styled_log, use_container_width=True, hide_index=True)
+
+        st.divider()
+        st.subheader("Information Architecture")
+        st.markdown(
+            """
+            This overview implements **Level 1** of the industrial monitoring hierarchy:
+
+            | Level | View | Question answered |
+            |-------|------|-------------------|
+            | 1 | Fleet Overview (this tab) | What requires my attention? |
+            | 2 | Driver Detail | Why? |
+            | 3 | Telemetry Replay (`arcade_replay.py`) | What happened exactly? |
+
+            Health status rules are deterministic and reuse existing modules only:
+            **Critical** = unexplained anomaly (Phase 10) or "Pit now" (Phase 7);
+            **Warning** = partially-explained anomaly or active pit recommendation;
+            **Healthy** = no anomalies, no actionable recommendation.
+            """
+        )
+
+# ===========================================================================
+# Level 2 – Driver Detail
+# ===========================================================================
+
+with driver_tab:
+    missing = _data_missing()
+    if missing:
+        st.error(
+            "Processed data not found. Run `python -m src.data_ingestion` first to download "
+            f"and cache the {config.SEASON_YEAR} {config.EVENT_NAME} ({config.SESSION_NAME}) session."
+        )
+        st.write("Missing files:", [str(f) for f in missing])
+    else:
+        dd_laps, _, dd_telemetry = load_and_clean_all()
+        dd_context = align_context_to_session(load_context())
+        dd_anomalies = assess_anomaly_health(dd_laps, dd_context)
+        dd_recs = build_recommendations_table(dd_laps)
+        dd_health = compute_fleet_health(dd_laps, dd_anomalies, dd_recs)
+        dd_drivers = sorted(dd_laps["Driver"].unique())
+
+        # Driver selector – pre-populated from Fleet Overview session state
+        default_driver = st.session_state.get("detail_driver", config.COMPARISON_DRIVERS[0])
+        if default_driver not in dd_drivers:
+            default_driver = dd_drivers[0]
+        selected_driver = st.selectbox(
+            "Driver", dd_drivers, index=dd_drivers.index(default_driver),
+            key="driver_detail_selector",
+        )
+        st.session_state["detail_driver"] = selected_driver
+
+        # Resolve driver health row
+        driver_health_rows = dd_health[dd_health["Driver"] == selected_driver]
+        if driver_health_rows.empty:
+            st.warning(f"No health data for {selected_driver}.")
+        else:
+            dhr = driver_health_rows.iloc[0]
+            status = dhr["HealthStatus"]
+            color = HEALTH_COLOR_LABEL.get(status, "")
+            st.markdown(f"### {selected_driver} — Health Status: :{color}[**{status}**]")
+
+            # --- Asset status KPI cards -------------------------------------
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Tyre Compound", dhr["CurrentCompound"])
+            c2.metric("Tyre Age", f"{dhr['TyreLife']} laps" if dhr["TyreLife"] is not None else "—")
+            c3.metric("Current Lap", str(dhr["CurrentLap"]) if dhr["CurrentLap"] is not None else "—")
+            c4.metric("Stint", str(dhr["Stint"]) if dhr["Stint"] is not None else "—")
+
+            st.divider()
+
+            # --- Expected vs Actual ----------------------------------------
+            st.subheader("Expected vs Actual")
+            driver_laps = dd_laps[dd_laps["Driver"] == selected_driver].copy()
+            avg_df = average_lap_time_by_driver(dd_laps)
+            avg_row = avg_df[avg_df["Driver"] == selected_driver]
+            expected_avg = float(avg_row["AvgLapTimeSeconds"].iloc[0]) if not avg_row.empty else None
+
+            last_lap_rows = driver_laps.sort_values("LapNumber")
+            actual_last = float(last_lap_rows.iloc[-1]["LapTimeSeconds"]) if not last_lap_rows.empty else None
+
+            # Degradation: expected (full stint slope) vs current stint estimate
+            fits = degradation_per_stint(driver_laps)
+            current_stint = dhr["Stint"]
+            current_fit = fits[fits["Stint"] == current_stint] if not fits.empty and current_stint is not None else pd.DataFrame()
+            expected_slope = float(current_fit["DegradationSecondsPerLap"].iloc[0]) if not current_fit.empty else None
+
+            e1, e2, e3 = st.columns(3)
+            if expected_avg is not None:
+                delta_pace = (actual_last - expected_avg) if actual_last is not None else None
+                e1.metric(
+                    "Expected Avg Pace",
+                    f"{expected_avg:.3f}s",
+                    help="Driver's average lap time across this race (baseline).",
+                )
+                e2.metric(
+                    "Last Lap Time",
+                    f"{actual_last:.3f}s" if actual_last is not None else "—",
+                    delta=f"{delta_pace:+.3f}s" if delta_pace is not None else None,
+                )
+            if expected_slope is not None:
+                e3.metric(
+                    "Degradation Slope",
+                    f"{expected_slope:+.4f} s/lap",
+                    delta="Degrading" if expected_slope > 0 else "Improving",
+                    help="Linear fit of lap time vs stint lap number (Phase 5).",
+                )
+
+            st.divider()
+
+            # --- Lap time trend chart ---------------------------------------
+            st.subheader("Lap Time Trend")
+            st.plotly_chart(plot_lap_times(driver_laps), use_container_width=True)
+
+            st.subheader("Tyre Degradation")
+            st.plotly_chart(plot_tyre_life_vs_laptime(driver_laps), use_container_width=True)
+
+            st.divider()
+
+            # --- Active alerts for this driver ------------------------------
+            st.subheader("Active Alerts")
+            dd_event_log = build_event_log(dd_laps, dd_context, dd_anomalies, dd_recs)
+            driver_alerts = dd_event_log[
+                (dd_event_log["Driver"] == selected_driver)
+                & (dd_event_log["Severity"].isin([SEVERITY_WARNING, SEVERITY_CRITICAL]))
+            ][["Severity", "EventType", "LapNumber", "Description", "Context", "Action"]]
+            if driver_alerts.empty:
+                st.success(f"No active alerts for {selected_driver}.")
+            else:
+                styled_da = driver_alerts.style.map(_style_severity, subset=["Severity"])
+                st.dataframe(styled_da, use_container_width=True, hide_index=True)
+
+            st.divider()
+
+            # --- Pit recommendations for this driver -----------------------
+            st.subheader("Pit / Maintenance Recommendations")
+            if not dd_recs.empty:
+                driver_recs = dd_recs[dd_recs["Driver"] == selected_driver]
+                if driver_recs.empty:
+                    st.info(f"No recommendations available for {selected_driver}.")
+                else:
+                    st.dataframe(driver_recs, use_container_width=True, hide_index=True)
+            else:
+                st.info("No recommendations data available.")
+
+            st.divider()
+
+            # --- Replay reference ------------------------------------------
+            st.subheader("Telemetry Replay (Level 3)")
+            st.info(
+                f"To launch the telemetry replay for **{selected_driver}**, run in your terminal:\n\n"
+                f"```\npython app/arcade_replay.py --drivers {selected_driver}\n```\n\n"
+                "The replay shows the fastest lap with live speed, throttle, brake, and gear gauges, "
+                "plus the operational context panel (Phase 9)."
+            )
+
+# ===========================================================================
+# Phase 1-2 – Race Detail (preserved exactly)
+# ===========================================================================
 
 with race_tab:
     st.subheader("Data Loading Status")
@@ -182,6 +511,10 @@ with race_tab:
         """
     )
 
+# ===========================================================================
+# Phase 3 – Season Monitoring (preserved exactly)
+# ===========================================================================
+
 with season_tab:
     st.subheader("Season Data Loading Status")
 
@@ -258,6 +591,10 @@ with season_tab:
           tracking peak pressure or peak current per well test instead of storing the full waveform.
         """
     )
+
+# ===========================================================================
+# Phase 4 – Fleet Monitoring (preserved exactly)
+# ===========================================================================
 
 with fleet_tab:
     st.subheader("Fleet Data Loading Status")
@@ -371,6 +708,10 @@ with fleet_tab:
           flagging that an asset's baseline performance has genuinely changed, not just had a noisy day.
         """
     )
+
+# ===========================================================================
+# Phase 5 – Predictive Analytics (preserved exactly)
+# ===========================================================================
 
 with predictive_tab:
     st.subheader("Data Loading Status")
@@ -490,6 +831,10 @@ with predictive_tab:
         """
     )
 
+# ===========================================================================
+# Phase 6 – Operational Assistant (preserved exactly)
+# ===========================================================================
+
 with assistant_tab:
     st.subheader("Data Loading Status")
 
@@ -590,6 +935,10 @@ with assistant_tab:
         """
     )
 
+# ===========================================================================
+# Phase 7 – Decision Support (preserved exactly)
+# ===========================================================================
+
 with decision_tab:
     st.subheader("Data Loading Status")
 
@@ -656,6 +1005,10 @@ with decision_tab:
           cliff, not reactively after one.
         """
     )
+
+# ===========================================================================
+# Phase 9 – Operational Context (preserved exactly)
+# ===========================================================================
 
 with context_tab:
     st.subheader("Data Loading Status")
@@ -786,6 +1139,10 @@ with context_tab:
           dashboard or pipeline would need to change.
         """
     )
+
+# ===========================================================================
+# Phase 10 – Health Assessment (preserved exactly)
+# ===========================================================================
 
 with health_tab:
     st.subheader("Data Loading Status")
