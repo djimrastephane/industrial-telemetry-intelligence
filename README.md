@@ -146,6 +146,7 @@ Swapping the data source means replacing `src/data_ingestion.py` and the column 
 ![Fleet Overview — operational event log expanded](assets/screenshots/fleet_overview_event_log.png)
 ![Fleet Overview — information architecture](assets/screenshots/fleet_overview_information_architecture.png)
 ![Driver Detail tab](assets/screenshots/driver_detail_tab.png)
+![Driver Detail — active alerts, recommendations and replay](assets/screenshots/driver_detail_alerts_recommendations.png)
 ![Race Detail tab](assets/screenshots/race_detail_tab.png)
 ![Season Monitoring tab](assets/screenshots/season_monitoring_tab.png)
 ![Fleet Monitoring tab](assets/screenshots/fleet_monitoring_tab.png)
