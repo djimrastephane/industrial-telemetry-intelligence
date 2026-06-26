@@ -140,6 +140,7 @@ Swapping the data source means replacing `src/data_ingestion.py` and the column 
 | Decision Support (7) | Recommended pit windows, sorted by urgency |
 | Arcade Replay (8) | Multiple cars on the real track shape, live instrument cluster |
 | Operational Context (9) | Tyre state, track status, temperatures, and recent race control events for a selected lap |
+| Health Assessment (10) | Noise reduction KPIs — z-score alarms re-scored through context, unexplained vs explained breakdown |
 
 ![Fleet Overview — KPI cards and health table](assets/screenshots/fleet_overview_tab.png)
 ![Fleet Overview — health table scrolled](assets/screenshots/fleet_overview_health_table.png)
@@ -155,6 +156,7 @@ Swapping the data source means replacing `src/data_ingestion.py` and the column 
 ![Operational Assistant tab](assets/screenshots/operational_assistant_tab.png)
 ![Decision Support tab](assets/screenshots/decision_support_tab.png)
 ![Operational Context tab](assets/screenshots/operational_context_tab.png)
+![Health Assessment tab](assets/screenshots/health_assessment_tab.png)
 ![Arcade replay window](assets/screenshots/arcade_replay.png)
 
 ## Why Formula 1 data?
