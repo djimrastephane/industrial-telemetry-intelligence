@@ -34,7 +34,7 @@ def asset_card_html(row: pd.Series) -> str:
     badge    = health_badge_html(status)
     driver   = row.get("Driver", "—")
     compound = row.get("CurrentCompound") or "—"
-    tyre_str = _fmt(row.get("TyreLife"), " laps")
+    tyre_str = _fmt(row.get("TyreLife"))
     lap_str  = _fmt(row.get("CurrentLap"))
     stint_str = _fmt(row.get("Stint"))
     risk     = row.get("RiskCategory") or "—"

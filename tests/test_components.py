@@ -103,7 +103,7 @@ def test_asset_card_warning_border(warning_row):
     html = asset_card_html(warning_row)
     assert "warning" in html
     assert "LEC" in html
-    assert "20 laps" in html
+    assert "20" in html
 
 
 def test_asset_card_critical_none_values(critical_row):
