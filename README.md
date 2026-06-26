@@ -142,24 +142,6 @@ Swapping the data source means replacing `src/data_ingestion.py` and the column 
 | Operational Context (9) | Tyre state, track status, temperatures, and recent race control events for a selected lap |
 | Health Assessment (10) | Noise reduction KPIs — z-score alarms re-scored through context, unexplained vs explained breakdown |
 
-### Phase 9A — Dark industrial theme
-
-![Fleet Overview — dark theme with KPI banner, donut chart and asset cards](assets/screenshots/fleet_overview_dark.png)
-![Driver Detail — dark theme with header card, sparklines and event timeline](assets/screenshots/driver_detail_dark.png)
-
-### Pre-Phase 9A reference
-
-![Fleet Overview — information architecture](assets/screenshots/fleet_overview_information_architecture.png)
-![Race Detail tab](assets/screenshots/race_detail_tab.png)
-![Season Monitoring tab](assets/screenshots/season_monitoring_tab.png)
-![Fleet Monitoring tab](assets/screenshots/fleet_monitoring_tab.png)
-![Predictive Analytics tab](assets/screenshots/predictive_analytics_tab.png)
-![Operational Assistant tab](assets/screenshots/operational_assistant_tab.png)
-![Decision Support tab](assets/screenshots/decision_support_tab.png)
-![Operational Context tab](assets/screenshots/operational_context_tab.png)
-![Health Assessment tab](assets/screenshots/health_assessment_tab.png)
-![Arcade replay — single driver](assets/screenshots/arcade_replay.png)
-![Arcade replay — multi-driver (VER, LEC, NOR)](assets/screenshots/multi_driver_arcade_replay.png)
 
 ## Why Formula 1 data?
 
