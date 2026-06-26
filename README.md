@@ -130,8 +130,8 @@ Swapping the data source means replacing `src/data_ingestion.py` and the column 
 
 | Tab | What it shows |
 |---|---|
-| **Fleet Overview** | KPI cards, asset health table, active alerts, full event log |
-| **Driver Detail** | Health status, expected vs actual metrics, lap trends, active alerts, pit recommendations |
+| **Fleet Overview** | KPI status banner, fleet health donut, top-risk asset cards, event timeline, full asset grid |
+| **Driver Detail** | Driver header card, expected vs actual, sparkline + trend charts, recommendations panel, event timeline |
 | Race Detail (1-2) | Tyre degradation, speed/throttle/brake traces, anomaly table |
 | Season Monitoring (3) | Position/speed-trap trends across a season, asset-health slope |
 | Fleet Monitoring (4) | Cross-year pace/degradation benchmarking |
@@ -142,13 +142,14 @@ Swapping the data source means replacing `src/data_ingestion.py` and the column 
 | Operational Context (9) | Tyre state, track status, temperatures, and recent race control events for a selected lap |
 | Health Assessment (10) | Noise reduction KPIs — z-score alarms re-scored through context, unexplained vs explained breakdown |
 
-![Fleet Overview — KPI cards and health table](assets/screenshots/fleet_overview_tab.png)
-![Fleet Overview — health table scrolled](assets/screenshots/fleet_overview_health_table.png)
-![Fleet Overview — active alerts and event log](assets/screenshots/fleet_overview_active_alerts.png)
-![Fleet Overview — operational event log expanded](assets/screenshots/fleet_overview_event_log.png)
+### Phase 9A — Dark industrial theme
+
+![Fleet Overview — dark theme with KPI banner, donut chart and asset cards](assets/screenshots/fleet_overview_dark.png)
+![Driver Detail — dark theme with header card, sparklines and event timeline](assets/screenshots/driver_detail_dark.png)
+
+### Pre-Phase 9A reference
+
 ![Fleet Overview — information architecture](assets/screenshots/fleet_overview_information_architecture.png)
-![Driver Detail tab](assets/screenshots/driver_detail_tab.png)
-![Driver Detail — active alerts, recommendations and replay](assets/screenshots/driver_detail_alerts_recommendations.png)
 ![Race Detail tab](assets/screenshots/race_detail_tab.png)
 ![Season Monitoring tab](assets/screenshots/season_monitoring_tab.png)
 ![Fleet Monitoring tab](assets/screenshots/fleet_monitoring_tab.png)
