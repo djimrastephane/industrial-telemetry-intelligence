@@ -506,8 +506,10 @@ with driver_tab:
             # --- Replay reference ------------------------------------------
             st.subheader("Telemetry Replay (Level 3)")
             st.info(
-                f"To launch the telemetry replay for **{selected_driver}**, run in your terminal:\n\n"
-                f"```\npython app/arcade_replay.py --drivers {selected_driver}\n```\n\n"
+                f"To launch the telemetry replay for **{selected_driver}**, run in your terminal:"
+            )
+            st.code(f"python app/arcade_replay.py --drivers {selected_driver}", language="bash")
+            st.caption(
                 "The replay shows the fastest lap with live speed, throttle, brake, and gear gauges, "
                 "plus the operational context panel (Phase 9)."
             )
