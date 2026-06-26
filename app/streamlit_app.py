@@ -503,16 +503,20 @@ with driver_tab:
 
             st.divider()
 
-            # --- Replay reference ------------------------------------------
+            # --- Replay launch ---------------------------------------------
             st.subheader("Telemetry Replay (Level 3)")
-            st.info(
-                f"To launch the telemetry replay for **{selected_driver}**, run in your terminal:"
-            )
-            st.code(f"python app/arcade_replay.py --drivers {selected_driver}", language="bash")
             st.caption(
                 "The replay shows the fastest lap with live speed, throttle, brake, and gear gauges, "
                 "plus the operational context panel (Phase 9)."
             )
+            if st.button(f"▶ Launch Replay — {selected_driver}", key="launch_replay"):
+                import subprocess
+                replay_script = Path(__file__).parent / "arcade_replay.py"
+                subprocess.Popen(
+                    [sys.executable, str(replay_script), "--drivers", selected_driver],
+                    cwd=Path(__file__).parent.parent,
+                )
+                st.success(f"Replay launched for {selected_driver} — check your desktop.")
 
 # ===========================================================================
 # Phase 1-2 – Race Detail (preserved exactly)
