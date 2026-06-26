@@ -142,6 +142,8 @@ Swapping the data source means replacing `src/data_ingestion.py` and the column 
 | Operational Context (9) | Tyre state, track status, temperatures, and recent race control events for a selected lap |
 | Health Assessment (10) | Noise reduction KPIs — z-score alarms re-scored through context, unexplained vs explained breakdown |
 
+![Fleet Overview — dark industrial theme](assets/screenshots/fleet_overview_dark.png)
+
 
 ## Why Formula 1 data?
 
