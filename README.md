@@ -157,7 +157,8 @@ Swapping the data source means replacing `src/data_ingestion.py` and the column 
 ![Decision Support tab](assets/screenshots/decision_support_tab.png)
 ![Operational Context tab](assets/screenshots/operational_context_tab.png)
 ![Health Assessment tab](assets/screenshots/health_assessment_tab.png)
-![Arcade replay window](assets/screenshots/arcade_replay.png)
+![Arcade replay — single driver](assets/screenshots/arcade_replay.png)
+![Arcade replay — multi-driver (VER, LEC, NOR)](assets/screenshots/multi_driver_arcade_replay.png)
 
 ## Why Formula 1 data?
 
