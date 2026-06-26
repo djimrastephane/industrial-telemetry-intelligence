@@ -1,0 +1,270 @@
+/* Phase 9A: Industrial UI — dark theme overlay */
+
+/* ── KPI Status Banner ──────────────────────────────────────────────────── */
+.kpi-banner {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.kpi-card {
+    flex: 1;
+    background: #1E293B;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 14px 16px;
+    text-align: center;
+}
+
+.kpi-number {
+    font-size: 2.8rem;
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 4px;
+    font-variant-numeric: tabular-nums;
+}
+
+.kpi-label {
+    font-size: 0.68rem;
+    color: #94A3B8;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+}
+
+.kpi-healthy  { color: #22C55E; }
+.kpi-warning  { color: #F59E0B; }
+.kpi-critical { color: #EF4444; }
+.kpi-info     { color: #3B82F6; }
+.kpi-neutral  { color: #F8FAFC; }
+
+/* ── Section heading ────────────────────────────────────────────────────── */
+.section-heading {
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #94A3B8;
+    margin: 20px 0 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #334155;
+}
+
+/* ── Health badge ───────────────────────────────────────────────────────── */
+.health-badge {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 10px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.badge-healthy  { background: #14532d; color: #22C55E; }
+.badge-warning  { background: #451a03; color: #F59E0B; }
+.badge-critical { background: #450a0a; color: #EF4444; }
+
+/* ── Asset cards grid ───────────────────────────────────────────────────── */
+.asset-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 10px;
+    margin: 4px 0 16px;
+}
+
+.asset-card {
+    background: #1E293B;
+    border-radius: 8px;
+    padding: 12px 14px;
+    border: 1px solid #334155;
+    border-left: 4px solid;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+    cursor: default;
+}
+
+.asset-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+
+.asset-card.healthy  { border-left-color: #22C55E; }
+.asset-card.warning  { border-left-color: #F59E0B; }
+.asset-card.critical { border-left-color: #EF4444; }
+
+@keyframes pulse-critical {
+    0%   { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); }
+    70%  { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+.asset-card.critical { animation: pulse-critical 2.5s infinite; }
+
+.asset-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.asset-driver-code {
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: #F8FAFC;
+}
+
+.asset-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 10px;
+    font-size: 0.7rem;
+}
+
+.asset-meta-label { color: #94A3B8; }
+.asset-meta-value { color: #F8FAFC; font-weight: 500; }
+
+.asset-recommendation {
+    margin-top: 8px;
+    padding: 5px 8px;
+    background: #0F172A;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    color: #94A3B8;
+    border-left: 2px solid #334155;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ── Event timeline ─────────────────────────────────────────────────────── */
+.timeline {
+    position: relative;
+    padding-left: 22px;
+    margin: 4px 0 16px;
+}
+
+.timeline::before {
+    content: '';
+    position: absolute;
+    left: 7px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #334155;
+}
+
+.timeline-event {
+    position: relative;
+    margin-bottom: 8px;
+    padding: 8px 12px;
+    background: #1E293B;
+    border-radius: 6px;
+    border: 1px solid #334155;
+}
+
+.timeline-event::before {
+    content: '';
+    position: absolute;
+    left: -18px;
+    top: 13px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #475569;
+    border: 2px solid #0F172A;
+}
+
+.timeline-event.critical::before { background: #EF4444; }
+.timeline-event.warning::before  { background: #F59E0B; }
+.timeline-event.info::before     { background: #3B82F6; }
+.timeline-event.healthy::before  { background: #22C55E; }
+
+.timeline-time {
+    font-size: 0.62rem;
+    color: #64748B;
+    margin-bottom: 2px;
+    font-family: monospace;
+}
+
+.timeline-desc {
+    font-size: 0.75rem;
+    color: #E2E8F0;
+}
+
+.timeline-action {
+    font-size: 0.65rem;
+    color: #3B82F6;
+    margin-top: 2px;
+}
+
+/* ── Driver header card ─────────────────────────────────────────────────── */
+.driver-header {
+    background: #1E293B;
+    border-radius: 10px;
+    padding: 18px 22px;
+    margin-bottom: 16px;
+    border: 1px solid #334155;
+    border-left: 5px solid;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    flex-wrap: wrap;
+}
+
+.driver-header.healthy  { border-left-color: #22C55E; }
+.driver-header.warning  { border-left-color: #F59E0B; }
+.driver-header.critical { border-left-color: #EF4444; }
+
+.driver-name {
+    font-size: 2rem;
+    font-weight: 800;
+    color: #F8FAFC;
+    margin: 0 0 6px;
+    line-height: 1;
+}
+
+.driver-meta-grid {
+    display: flex;
+    gap: 22px;
+    flex-wrap: wrap;
+}
+
+.driver-meta-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.driver-meta-item-label {
+    font-size: 0.6rem;
+    color: #94A3B8;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+}
+
+.driver-meta-item-value {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #F8FAFC;
+}
+
+/* ── Recommendations panel ──────────────────────────────────────────────── */
+.rec-list  { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 16px; }
+
+.rec-card {
+    background: #1E293B;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 10px 14px;
+}
+
+.rec-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.rec-icon   { font-size: 0.85rem; }
+.rec-action { font-size: 0.78rem; font-weight: 600; color: #F8FAFC; flex: 1; }
+.rec-risk   { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; }
+.rec-meta   { font-size: 0.65rem; color: #64748B; }

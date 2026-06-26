@@ -18,8 +18,16 @@ import pandas as pd
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import plotly.graph_objects as go
 
 from src import config
+from components.asset_card import asset_card_html
+from components.event_timeline import event_timeline_html
+from components.health_badge import health_badge_html
+from components.sparkline import sparkline_figure
+from components.status_banner import status_banner_html
 from src.anomaly_detection import get_anomaly_table
 from src.baseline_models import (
     average_lap_time_by_driver,
@@ -105,6 +113,10 @@ from src.visualisation import (
 
 st.set_page_config(page_title="Industrial Telemetry Intelligence", layout="wide")
 
+_CSS_FILE = Path(__file__).parent / "styles" / "dark_theme.css"
+if _CSS_FILE.exists():
+    st.markdown(f"<style>{_CSS_FILE.read_text()}</style>", unsafe_allow_html=True)
+
 st.title("Industrial Asset Monitoring and Decision Support System")
 st.caption("Demonstrated on Formula 1 telemetry as a public surrogate for industrial sensor data")
 
@@ -143,6 +155,115 @@ def _last_track_status(laps_df: pd.DataFrame) -> str:
     last = laps_df.dropna(subset=["LapStartTimeSeconds"]).sort_values("LapStartTimeSeconds").iloc[-1]
     raw = str(last.get("TrackStatus", "")).strip()
     return TRACK_STATUS_LABELS.get(raw[-1] if raw else "", "Unknown")
+
+
+def _fleet_donut(kpis: dict) -> go.Figure:
+    labels = ["Healthy", "Warning", "Critical"]
+    values = [kpis["Healthy"], kpis["Warning"], kpis["Critical"]]
+    colors = ["#22C55E", "#F59E0B", "#EF4444"]
+    fig = go.Figure(go.Pie(
+        labels=labels, values=values, hole=0.65,
+        marker=dict(colors=colors, line=dict(color="#0F172A", width=2)),
+        textinfo="label+value",
+        textfont=dict(color="#F8FAFC", size=11),
+    ))
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        showlegend=False,
+        margin=dict(l=0, r=0, t=10, b=0), height=220,
+        annotations=[dict(
+            text=f"<b>{kpis['DriverCount']}</b><br>Assets",
+            x=0.5, y=0.5,
+            font=dict(size=16, color="#F8FAFC"),
+            showarrow=False,
+        )],
+    )
+    return fig
+
+
+def _sort_by_health(health_df: pd.DataFrame) -> pd.DataFrame:
+    order = {HEALTH_CRITICAL: 0, HEALTH_WARNING: 1, HEALTH_HEALTHY: 2}
+    return (
+        health_df
+        .assign(_order=health_df["HealthStatus"].map(order).fillna(3))
+        .sort_values("_order")
+        .drop(columns=["_order"])
+        .reset_index(drop=True)
+    )
+
+
+def _driver_header_html(dhr: pd.Series) -> str:
+    status = dhr.get("HealthStatus", HEALTH_HEALTHY)
+    status_cls = {HEALTH_HEALTHY: "healthy", HEALTH_WARNING: "warning", HEALTH_CRITICAL: "critical"}.get(status, "healthy")
+    badge = health_badge_html(status)
+    driver = dhr.get("Driver", "—")
+
+    def _fmt(val, suffix=""):
+        if val is None:
+            return "—"
+        try:
+            import math
+            if math.isnan(float(val)):
+                return "—"
+        except (TypeError, ValueError):
+            pass
+        return f"{int(float(val))}{suffix}" if suffix == " laps" else str(val)
+
+    return f"""<div class="driver-header {status_cls}">
+  <div>
+    <p class="driver-name">{driver}</p>
+    {badge}
+  </div>
+  <div class="driver-meta-grid">
+    <div class="driver-meta-item">
+      <span class="driver-meta-item-label">Tyre</span>
+      <span class="driver-meta-item-value">{dhr.get("CurrentCompound") or "—"}</span>
+    </div>
+    <div class="driver-meta-item">
+      <span class="driver-meta-item-label">Age</span>
+      <span class="driver-meta-item-value">{_fmt(dhr.get("TyreLife"), " laps")}</span>
+    </div>
+    <div class="driver-meta-item">
+      <span class="driver-meta-item-label">Lap</span>
+      <span class="driver-meta-item-value">{_fmt(dhr.get("CurrentLap"))}</span>
+    </div>
+    <div class="driver-meta-item">
+      <span class="driver-meta-item-label">Stint</span>
+      <span class="driver-meta-item-value">{_fmt(dhr.get("Stint"))}</span>
+    </div>
+    <div class="driver-meta-item">
+      <span class="driver-meta-item-label">Risk</span>
+      <span class="driver-meta-item-value">{dhr.get("RiskCategory") or "—"}</span>
+    </div>
+  </div>
+</div>"""
+
+
+def _recommendations_html(recs_df: pd.DataFrame) -> str:
+    _RISK_COLOR = {"High": "#EF4444", "Medium": "#F59E0B", "Low": "#22C55E"}
+    _REC_ICON = {"Pit now": "🔴", "Pit within": "🟠", "No action": "🟢"}
+    cards = []
+    for _, row in recs_df.iterrows():
+        risk = row.get("RiskCategory") or "—"
+        action = row.get("RecommendedAction") or "—"
+        compound = row.get("Compound") or "—"
+        stint = row.get("Stint")
+        stint_str = str(int(stint)) if stint is not None and not pd.isna(stint) else "—"
+        slope = row.get("DegradationSecondsPerLap")
+        slope_str = f"{slope:+.4f} s/lap" if slope is not None and not pd.isna(slope) else "—"
+        risk_color = _RISK_COLOR.get(risk, "#94A3B8")
+        icon = next((v for k, v in _REC_ICON.items() if k in str(action)), "ℹ️")
+        cards.append(
+            f'<div class="rec-card">'
+            f'<div class="rec-header">'
+            f'<span class="rec-icon">{icon}</span>'
+            f'<span class="rec-action">{action}</span>'
+            f'<span class="rec-risk" style="color:{risk_color}">{risk} Risk</span>'
+            f'</div>'
+            f'<div class="rec-meta">Stint {stint_str} · {compound} · Slope: {slope_str}</div>'
+            f"</div>"
+        )
+    return '<div class="rec-list">' + "".join(cards) + "</div>"
 
 
 # ---------------------------------------------------------------------------
@@ -188,38 +309,44 @@ with overview_tab:
         ov_event_log = build_event_log(ov_laps, ov_context, ov_anomalies, ov_recs)
         ov_track_status = _last_track_status(ov_laps)
 
-        # --- KPI cards row 1 ------------------------------------------------
-        st.subheader("Fleet Status")
-        k1, k2, k3, k4 = st.columns(4)
-        k1.metric("Assets Monitored", ov_kpis["DriverCount"])
-        k2.metric("Total Laps Loaded", ov_kpis["TotalLaps"])
-        k3.metric("Healthy", ov_kpis["Healthy"])
-        k4.metric("Warning", ov_kpis["Warning"])
+        # --- Row 1: Status banner -------------------------------------------
+        st.markdown(status_banner_html(ov_kpis, ov_track_status), unsafe_allow_html=True)
 
-        k5, k6, k7, k8 = st.columns(4)
-        k5.metric("Critical", ov_kpis["Critical"])
-        k6.metric("Active Alerts", ov_kpis["ActiveAlerts"])
-        k7.metric("Track Status", ov_track_status)
-        k8.metric("Session", f"{config.SEASON_YEAR} {config.EVENT_NAME}")
+        # --- Row 2: Fleet donut + top-risk assets ---------------------------
+        col_donut, col_top = st.columns([1, 2])
+        with col_donut:
+            st.markdown('<p class="section-heading">Fleet Health Distribution</p>', unsafe_allow_html=True)
+            st.plotly_chart(_fleet_donut(ov_kpis), use_container_width=True)
+        with col_top:
+            st.markdown('<p class="section-heading">Highest Risk Assets</p>', unsafe_allow_html=True)
+            top5 = _sort_by_health(ov_health).head(5)
+            st.markdown(
+                '<div class="asset-grid">'
+                + "".join(asset_card_html(row) for _, row in top5.iterrows())
+                + "</div>",
+                unsafe_allow_html=True,
+            )
 
-        st.divider()
+        # --- Row 3: Recent event timeline -----------------------------------
+        st.markdown('<p class="section-heading">Recent Events</p>', unsafe_allow_html=True)
+        recent_events = ov_event_log.sort_values("SessionTimeSeconds", ascending=False).head(15)
+        st.markdown(event_timeline_html(recent_events), unsafe_allow_html=True)
 
-        # --- Asset health table --------------------------------------------
-        st.subheader("Asset Health Table")
+        # --- Row 4: All assets grid -----------------------------------------
+        st.markdown('<p class="section-heading">All Assets</p>', unsafe_allow_html=True)
         st.caption(
             "Health status derived from anomaly assessment (Phase 10) and pit recommendations "
             "(Phase 7). No new models — all inputs come from existing analytics."
         )
+        sorted_health = _sort_by_health(ov_health)
+        st.markdown(
+            '<div class="asset-grid">'
+            + "".join(asset_card_html(row) for _, row in sorted_health.iterrows())
+            + "</div>",
+            unsafe_allow_html=True,
+        )
 
-        display_health = ov_health[[
-            "Driver", "HealthStatus", "CurrentCompound", "TyreLife",
-            "CurrentLap", "Stint", "RiskCategory",
-            "WorstAnomaly", "ActiveRecommendation",
-        ]].copy()
-        styled_health = display_health.style.map(_style_health, subset=["HealthStatus"])
-        st.dataframe(styled_health, use_container_width=True, hide_index=True)
-
-        # Driver selector that feeds Driver Detail tab
+        # --- Driver selector → Driver Detail --------------------------------
         st.divider()
         available_drivers = sorted(ov_laps["Driver"].unique())
         selected_for_detail = st.selectbox(
@@ -235,35 +362,6 @@ with overview_tab:
         if selected_for_detail:
             st.session_state["detail_driver"] = selected_for_detail
         st.info("Switch to the **Driver Detail** tab above to see the full driver view.")
-
-        st.divider()
-
-        # --- Active alerts -------------------------------------------------
-        st.subheader("Active Alerts")
-        alert_df = ov_event_log[
-            ov_event_log["Severity"].isin([SEVERITY_WARNING, SEVERITY_CRITICAL])
-        ][["Severity", "EventType", "Driver", "LapNumber", "Description", "Action"]].copy()
-
-        if alert_df.empty:
-            st.success("No active warnings or critical alerts.")
-        else:
-            styled_alerts = alert_df.style.map(_style_severity, subset=["Severity"])
-            st.dataframe(styled_alerts, use_container_width=True, hide_index=True)
-
-        st.divider()
-
-        # --- Operational event log ----------------------------------------
-        st.subheader("Operational Event Log")
-        with st.expander("Full chronological event log", expanded=False):
-            if ov_event_log.empty:
-                st.write("No events recorded.")
-            else:
-                log_display = ov_event_log[[
-                    "SessionTimeSeconds", "Severity", "EventType",
-                    "Driver", "LapNumber", "Description", "Context", "Action",
-                ]].copy()
-                styled_log = log_display.style.map(_style_severity, subset=["Severity"])
-                st.dataframe(styled_log, use_container_width=True, hide_index=True)
 
         st.divider()
         st.subheader("Information Architecture")
@@ -320,21 +418,12 @@ with driver_tab:
             st.warning(f"No health data for {selected_driver}.")
         else:
             dhr = driver_health_rows.iloc[0]
-            status = dhr["HealthStatus"]
-            color = HEALTH_COLOR_LABEL.get(status, "")
-            st.markdown(f"### {selected_driver} — Health Status: :{color}[**{status}**]")
 
-            # --- Asset status KPI cards -------------------------------------
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Tyre Compound", dhr["CurrentCompound"])
-            c2.metric("Tyre Age", f"{dhr['TyreLife']} laps" if dhr["TyreLife"] is not None else "—")
-            c3.metric("Current Lap", str(dhr["CurrentLap"]) if dhr["CurrentLap"] is not None else "—")
-            c4.metric("Stint", str(dhr["Stint"]) if dhr["Stint"] is not None else "—")
-
-            st.divider()
+            # --- Driver header card -----------------------------------------
+            st.markdown(_driver_header_html(dhr), unsafe_allow_html=True)
 
             # --- Expected vs Actual ----------------------------------------
-            st.subheader("Expected vs Actual")
+            st.markdown('<p class="section-heading">Expected vs Actual</p>', unsafe_allow_html=True)
             driver_laps = dd_laps[dd_laps["Driver"] == selected_driver].copy()
             avg_df = average_lap_time_by_driver(dd_laps)
             avg_row = avg_df[avg_df["Driver"] == selected_driver]
@@ -343,7 +432,6 @@ with driver_tab:
             last_lap_rows = driver_laps.sort_values("LapNumber")
             actual_last = float(last_lap_rows.iloc[-1]["LapTimeSeconds"]) if not last_lap_rows.empty else None
 
-            # Degradation: expected (full stint slope) vs current stint estimate
             fits = degradation_per_stint(driver_laps)
             current_stint = dhr["Stint"]
             current_fit = fits[fits["Stint"] == current_stint] if not fits.empty and current_stint is not None else pd.DataFrame()
@@ -352,60 +440,66 @@ with driver_tab:
             e1, e2, e3 = st.columns(3)
             if expected_avg is not None:
                 delta_pace = (actual_last - expected_avg) if actual_last is not None else None
-                e1.metric(
-                    "Expected Avg Pace",
-                    f"{expected_avg:.3f}s",
-                    help="Driver's average lap time across this race (baseline).",
-                )
-                e2.metric(
-                    "Last Lap Time",
-                    f"{actual_last:.3f}s" if actual_last is not None else "—",
-                    delta=f"{delta_pace:+.3f}s" if delta_pace is not None else None,
-                )
+                e1.metric("Expected Avg Pace", f"{expected_avg:.3f}s",
+                          help="Driver's average lap time across this race (baseline).")
+                e2.metric("Last Lap Time",
+                          f"{actual_last:.3f}s" if actual_last is not None else "—",
+                          delta=f"{delta_pace:+.3f}s" if delta_pace is not None else None)
             if expected_slope is not None:
-                e3.metric(
-                    "Degradation Slope",
-                    f"{expected_slope:+.4f} s/lap",
-                    delta="Degrading" if expected_slope > 0 else "Improving",
-                    help="Linear fit of lap time vs stint lap number (Phase 5).",
+                e3.metric("Degradation Slope", f"{expected_slope:+.4f} s/lap",
+                          delta="Degrading" if expected_slope > 0 else "Improving",
+                          help="Linear fit of lap time vs stint lap number (Phase 5).")
+
+            # --- Lap time trend + sparkline ---------------------------------
+            st.markdown('<p class="section-heading">Lap Time Trend</p>', unsafe_allow_html=True)
+            spark_col, chart_col = st.columns([1, 4])
+            with spark_col:
+                lap_times_series = (
+                    driver_laps.sort_values("LapNumber")["LapTimeSeconds"]
+                    .dropna().reset_index(drop=True)
                 )
+                if not lap_times_series.empty:
+                    st.plotly_chart(sparkline_figure(lap_times_series, "#3B82F6"),
+                                   use_container_width=True)
+            with chart_col:
+                st.plotly_chart(plot_lap_times(driver_laps), use_container_width=True)
 
-            st.divider()
+            # --- Tyre degradation + sparkline --------------------------------
+            st.markdown('<p class="section-heading">Tyre Degradation</p>', unsafe_allow_html=True)
+            spark_col2, chart_col2 = st.columns([1, 4])
+            with spark_col2:
+                tyre_life_series = (
+                    driver_laps.sort_values("LapNumber")["TyreLife"]
+                    .dropna().reset_index(drop=True)
+                )
+                if not tyre_life_series.empty:
+                    st.plotly_chart(sparkline_figure(tyre_life_series, "#F59E0B"),
+                                   use_container_width=True)
+            with chart_col2:
+                st.plotly_chart(plot_tyre_life_vs_laptime(driver_laps), use_container_width=True)
 
-            # --- Lap time trend chart ---------------------------------------
-            st.subheader("Lap Time Trend")
-            st.plotly_chart(plot_lap_times(driver_laps), use_container_width=True)
-
-            st.subheader("Tyre Degradation")
-            st.plotly_chart(plot_tyre_life_vs_laptime(driver_laps), use_container_width=True)
-
-            st.divider()
-
-            # --- Active alerts for this driver ------------------------------
-            st.subheader("Active Alerts")
-            dd_event_log = build_event_log(dd_laps, dd_context, dd_anomalies, dd_recs)
-            driver_alerts = dd_event_log[
-                (dd_event_log["Driver"] == selected_driver)
-                & (dd_event_log["Severity"].isin([SEVERITY_WARNING, SEVERITY_CRITICAL]))
-            ][["Severity", "EventType", "LapNumber", "Description", "Context", "Action"]]
-            if driver_alerts.empty:
-                st.success(f"No active alerts for {selected_driver}.")
-            else:
-                styled_da = driver_alerts.style.map(_style_severity, subset=["Severity"])
-                st.dataframe(styled_da, use_container_width=True, hide_index=True)
-
-            st.divider()
-
-            # --- Pit recommendations for this driver -----------------------
-            st.subheader("Pit / Maintenance Recommendations")
+            # --- Pit recommendations ----------------------------------------
+            st.markdown('<p class="section-heading">Pit / Maintenance Recommendations</p>',
+                        unsafe_allow_html=True)
             if not dd_recs.empty:
                 driver_recs = dd_recs[dd_recs["Driver"] == selected_driver]
                 if driver_recs.empty:
                     st.info(f"No recommendations available for {selected_driver}.")
                 else:
-                    st.dataframe(driver_recs, use_container_width=True, hide_index=True)
+                    st.markdown(_recommendations_html(driver_recs), unsafe_allow_html=True)
             else:
                 st.info("No recommendations data available.")
+
+            # --- Driver event timeline --------------------------------------
+            st.markdown('<p class="section-heading">Driver Events</p>', unsafe_allow_html=True)
+            dd_event_log = build_event_log(dd_laps, dd_context, dd_anomalies, dd_recs)
+            driver_events = dd_event_log[
+                dd_event_log["Driver"] == selected_driver
+            ].sort_values("SessionTimeSeconds", ascending=False)
+            if driver_events.empty:
+                st.success(f"No events for {selected_driver}.")
+            else:
+                st.markdown(event_timeline_html(driver_events), unsafe_allow_html=True)
 
             st.divider()
 
